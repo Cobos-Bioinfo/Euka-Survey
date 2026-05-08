@@ -49,6 +49,14 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     to be created in the main thread of a process. Since Streamlit runs user code
     in worker threads, we must launch a separate process to render the tree.
     """
+    # Initialize virtual display for headless environments (Streamlit Cloud)
+    try:
+        from pyvirtualdisplay import Display
+        display = Display(visible=False, size=(1200, 1000))
+        display.start()
+    except ImportError:
+        display = None
+
     import src.visualization as visualization
     from ete3 import NCBITaxa
     import os
@@ -65,6 +73,9 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     
     tree = ncbi.get_topology(list(phylum_metadata.keys()))
     tree.render(out_svg, w=1200, units="px", tree_style=ts)
+
+    if display:
+        display.stop()
 
 
 @st.cache_data(show_spinner=False)
