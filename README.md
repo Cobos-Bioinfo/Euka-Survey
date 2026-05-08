@@ -1,7 +1,9 @@
 # Eukaryote Survey Web App
 
 ## Description
-This project provides a fast, pre-computed Streamlit Web Application for exploring genomic sequencing data across the entire Eukaryotic tree of life. It tracks whole genome assemblies, functional annotations, and RNA-seq reads (divided into short- and long-reads) via a highly optimized SQLite database.
+This project provides a fast Streamlit Web Application for exploring genomic sequencing data across the entire Eukaryotic tree of life. It tracks whole genome assemblies, functional annotations, and RNA-seq reads (divided into short- and long-reads) via a highly optimized SQLite database.
+
+**Try [Euka-Survey](https://euka-survey-62bi4d34cytdpb56zmhms2.streamlit.app/) now!**
 
 **Main Use Case:** Identifying clades, families, or species that lack specific types of sequencing data, or discovering clades rich in genomic resources for comparative studies directly in your browser.
 
@@ -10,7 +12,7 @@ This project provides a fast, pre-computed Streamlit Web Application for explori
 ## Project Architecture
 - `app.py`: The main Streamlit Web App entry point. It provides a real-time querying interface using the natively precomputed metrics.
 - `src/`: Contains core Python module logic for database querying, taxonomy routing, and divergent bar chart rendering.
-- `db_builder/`: The offline heavy-lifting pipeline. These scripts aggregate data from NCBI Datasets, Annotrieve, and EBI ENA, then build and precompute the optimized local SQLite database (`eukaryote_taxid_features_*.db`) allowing the web app to do `O(1)` millisecond lookups instead of runtime graph traversals.
+- `db_builder/`: The offline pipeline. These scripts aggregate data from NCBI Datasets, Annotrieve, and EBI ENA, then build and precompute the optimized local SQLite database (`eukaryote_taxid_features_*.db`) allowing the web app to do `O(1)` millisecond lookups instead of runtime graph traversals.
 
 ## Installation & Local Execution
 
@@ -36,14 +38,14 @@ This project provides a fast, pre-computed Streamlit Web Application for explori
 This project is perfectly formatted for 1-click deployment on Streamlit Community Cloud.
 Because of the heavy dependency on `ete3` and `PyQt5` for rendering SVG phylogenetic charts, Streamlit Cloud detects the `environment.yml` and natively provisions the correct conda backing.
 
-Similarly, the app will automatically download the compressed ~1MB SQLite database from a Zenodo DOI bucket to boot, making the GitHub repo 100% code-driven without storing large binaries.
+Similarly, the app will automatically download the SQLite database from a Zenodo DOI bucket to boot, making the GitHub repo 100% code-driven without storing large binaries.
 
 ## Offline DB Generation Pipeline
-If you ever want to update the raw organism features by fetching fresh NCB/ENA/Annotrieve data:
+If you ever want to update the raw organism features by fetching fresh NCBI/ENA/Annotrieve data:
 ```bash
 python db_builder/pipeline_build_db.py
 ```
-This multi-hour pipeline will query the web, build the `taxid_features` table across all ~1.8M eukaryotic species, patch missing zero-count taxonomic entries, and natively generate the roll-up math in the `precomputed_clade_features` table, dropping a completely finalized `db` ready for `app.py` utilization.
+This pipeline will query the web, build the `taxid_features` table across all ~1.8M eukaryotic species, patch missing zero-count taxonomic entries, and natively generate the roll-up math in the `precomputed_clade_features` table, dropping a completely finalized `db` ready for `app.py` utilization.
 
 ## Notes
 - **Exclusion of Human/Mouse data**: RNA-seq runs for humans (taxID 9606) and mice (taxID 10090) are explicitly hardcoded to be excluded from ENA queries. This is an intentional project design to avoid significant API bloat for these highly sequenced model organisms.
