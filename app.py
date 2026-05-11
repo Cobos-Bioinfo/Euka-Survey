@@ -19,7 +19,7 @@ DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/
 
 
 # --- Streamlit Community Cloud App Name ---
-st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="wide", initial_sidebar_state="expanded")
 
 @st.cache_resource(show_spinner="Downloading Database (this happens once)...")
 def ensure_database():
@@ -68,10 +68,25 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     os.makedirs(visualization.TMP_DIR)
 
     ncbi = NCBITaxa()
+    
+    # Filter valid taxids that exist in local ETE3 database
+    valid_taxids = []
+    for tid in phylum_metadata.keys():
+        try:
+            ncbi.get_lineage(tid)
+            valid_taxids.append(tid)
+        except ValueError:
+            pass
+            
+    if not valid_taxids:
+        if display:
+            display.stop()
+        return
+
     layout_fn = visualization.create_layout_fn(ncbi, phylum_metadata, include_counts)
     ts = visualization.configure_tree_style(layout_fn, include_counts)
     
-    tree = ncbi.get_topology(list(phylum_metadata.keys()))
+    tree = ncbi.get_topology(valid_taxids)
     tree.render(out_svg, w=1200, units="px", tree_style=ts)
 
     if display:
@@ -237,6 +252,12 @@ def main():
             
             progress_bar.empty()
             status_text.empty()
+            
+            # Show exclusion statistics
+            nodes_excluded = len(query_taxids) - len(phylum_metadata)
+            if nodes_excluded > 0:
+                st.info(f"**Nodes included:** {len(phylum_metadata)}/{len(query_taxids)} "
+                        f"({nodes_excluded} excluded due to filtering criteria)")
             
             if not phylum_metadata:
                 st.warning("No clades have data matching the criteria (or all were empty).")
