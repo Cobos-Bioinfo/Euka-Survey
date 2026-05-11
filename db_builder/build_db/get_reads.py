@@ -18,9 +18,7 @@ def _ena_search() -> tuple[dict[int, int], dict[int, int], int]:
         "query": f'tax_tree({EUKARYOTE_TXID}) AND library_strategy="rna-seq"',
         "fields": "tax_id,instrument_platform",
         "format": "json",
-        "limit": 0,
-        "excludeAccessionType": "taxon",
-        "excludeAccessions": "9606,10090"  # Exclude human and mouse to greatly reduce the number of records
+        "limit": 0
     }
     r = requests.post(
         ENA_BASE,
