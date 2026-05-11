@@ -49,7 +49,7 @@ This pipeline will query the web, build the `taxid_features` table across all ~1
 
 For instantaneous UI preview responsiveness for commonly searched clades without blocking the main thread, run the taxa cache generator:
 ```bash
-python db_builder/precompute_taxa.py --db eukaryote_taxid_features_2026_05_08.db
+python db_builder/precompute_taxa.py --db eukaryotes.db
 ```
 This script bakes the rank breakdown node mappings into the `precomputed_taxa` table, dropping a completely finalized `db` ready for `app.py` utilization.
 

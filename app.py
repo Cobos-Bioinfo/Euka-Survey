@@ -13,9 +13,9 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryote_taxid_features_2026_05_08.db"
-# Replace with your actual Zenodo or S3 URL when uploaded
-DB_DOWNLOAD_URL = "https://zenodo.org/records/20081452/files/eukaryote_taxid_features_2026_05_08.db?download=1" 
+DB_PATH = "eukaryotes.db"
+# Fetch from the automatic GitHub Release action
+DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
 
 # --- Streamlit Community Cloud App Name ---

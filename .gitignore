@@ -36,3 +36,4 @@ logs/
 .tmp_bars/
 temp_tree_render.svg
 .streamlit/secrets.toml
+*.db

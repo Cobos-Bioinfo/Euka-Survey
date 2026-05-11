@@ -1,0 +1,49 @@
+name: Monthly Database Build
+
+on:
+  schedule:
+    - cron: '0 0 1 * *' # Runs at 00:00 on the 1st of every month automatically
+  workflow_dispatch: # Allows you to manually trigger it by clicking a button in the Actions tab
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to allow the workflow to create a Release
+
+    defaults:
+      run:
+        shell: bash -el {0} # Required for conda activates to work
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Conda environment
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: euka_refactored
+          environment-file: environment.yml
+          auto-activate-base: false
+          miniconda-version: "latest"
+
+      - name: Build Database Pipeline
+        run: |
+          # 1. Run the pipeline (fetches datasets, ENA reads, etc)
+          python db_builder/pipeline_build_db.py
+          
+          # 2. The pipeline presumably dropped a dated file like eukaryote_taxid_features_2026_05_11.db
+          # Rename whatever it dropped to the static 'eukaryotes.db' we rely on in the web app
+          mv eukaryote_taxid_features_*.db eukaryotes.db
+          
+          # 3. Bake the UI preview ranks into the fresh database
+          python db_builder/precompute_taxa.py --db eukaryotes.db
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Database Update"
+          body: "Automated database build."
+          files: eukaryotes.db
+          make_latest: true
