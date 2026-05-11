@@ -143,12 +143,12 @@ def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, pr
 
 
 def main():
-    st.title("EukaSurvey: Phylogenetic Resource Explorer")
-    st.markdown("Instantly visualize genomic data availability across the eukaryotic tree of life.")
+    st.title("EukaSurvey: The Genomic Resource Explorer for Eukaryotes")
+    st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
     
     # 1. Initialize dependencies
     db_ok = ensure_database()
-    if not db_ok and not os.path.exists(DB_PATH):
+    if not db_ok:
         st.stop()
         
     conn = get_db_connection()
