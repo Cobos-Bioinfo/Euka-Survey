@@ -121,6 +121,14 @@ def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
     }
 
 
+@st.cache_data(show_spinner=False)
+def fetch_taxa_cached(root_taxid, target_rank):
+    """Cached wrapper to fetch taxa at rank before button is clicked."""
+    if root_taxid is None or target_rank is None:
+        return None
+    return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
+
+
 def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, progress_bar=None, status_text=None):
     """
     In-memory replacement for phylo_divbarchart.load_data().
@@ -190,16 +198,24 @@ def main():
     exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
     include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
     
+    # Pre-fetch taxa to provide reactive feedback on tree size
+    query_taxids = []
+    if root_taxid and target_rank:
+        query_taxa = fetch_taxa_cached(root_taxid, target_rank)
+        if query_taxa:
+            query_taxids = [t[0] for t in query_taxa]
+            num_nodes = len(query_taxids)
+            st.sidebar.info(f"Tree size: **{num_nodes}** {target_rank} nodes")
+            if num_nodes > 100:
+                st.sidebar.warning("High node counts may take longer to compute and render.")
+        else:
+            st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
+
     if st.sidebar.button("Generate Visualization", type="primary"):
-        with st.spinner("Finding taxa..."):
-            # A) Find all child taxids at the target rank
-            taxa_pairs = taxonomy.get_taxa_at_rank(root_taxid, target_rank)
-            query_taxids = [t[0] for t in taxa_pairs]
+        if not query_taxids:
+            st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
+            st.stop()
             
-            if not query_taxids:
-                st.error(f"No {target_rank}s found under TaxID {root_taxid}.")
-                st.stop()
-                
         with st.spinner(f"Aggregating data for {len(query_taxids)} clades..."):
             progress_bar = st.progress(0)
             status_text = st.empty()
