@@ -156,9 +156,34 @@ def main():
     
     # 2. Sidebar Configuration
     st.sidebar.header("Query Configuration")
-    root_taxid = st.sidebar.number_input("Root Taxon ID (e.g., 2759 for Eukaryotes)", value=2759, step=1)
+    # root_taxid = st.sidebar.number_input("Root Taxon ID (e.g., 2759 for Eukaryotes)", value=2759)
     
-    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], index=3)
+    common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
+    
+    # st.sidebar.info("Select a common taxon from the dropdown or enter a custom ID")
+    choice = st.sidebar.selectbox(
+        "Set a custom Root Taxon ID or explore commonly surveyed clades:", 
+        ["Enter your own"] + common_taxa,
+        index=None,  # Nothing selected by default
+        placeholder="Choose a valid NCBI Taxon ID"
+    )
+
+    # Handle the selection
+    if choice is None:
+        root_taxid = None
+
+    elif choice == "Enter your own":
+        root_taxid = st.sidebar.text_input("Enter a valid NCBI Taxon ID", label_visibility="collapsed")
+        if root_taxid.isdigit():
+            root_taxid = int(root_taxid)
+        else:
+            st.sidebar.warning("Please enter a valid numeric Taxon ID.")
+
+    else:
+        taxid_map = {"Eukaryota (2759)": 2759, "Animals (33208)": 33208, "Mammalia (40674)": 40674, "Primates (9443)": 9443, "Fungi (4751)": 4751, "Plants (33090)": 33090}
+        root_taxid = taxid_map[choice]
+    
+    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], placeholder=None)
     
     st.sidebar.subheader("Visualization Settings")
     min_organisms = st.sidebar.number_input("Minimum Organisms in Clade", value=0, step=1)
