@@ -3,6 +3,7 @@ import sqlite3
 import os
 import tempfile
 import urllib.request
+import multiprocessing as mp
 from pathlib import Path
 from ete3 import NCBITaxa
 
@@ -17,7 +18,7 @@ DB_PATH = "eukaryote_taxid_features_2026_05_08.db"
 DB_DOWNLOAD_URL = "https://zenodo.org/records/20081452/files/eukaryote_taxid_features_2026_05_08.db?download=1" 
 
 
-
+# --- Streamlit Community Cloud App Name ---
 st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="wide")
 
 @st.cache_resource(show_spinner="Downloading Database (this happens once)...")
@@ -41,7 +42,6 @@ def get_db_connection():
 def get_ncbi():
     return NCBITaxa()
 
-import multiprocessing as mp
 
 def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     """
@@ -171,11 +171,11 @@ def main():
     db_ok = ensure_database()
     if not db_ok:
         st.stop()
-        
+         
     conn = get_db_connection()
     ncbi = get_ncbi()
     
-    # 2. Sidebar Configuration
+    ##### 2. Sidebar Configuration #####
     st.sidebar.header("Query Configuration")
     # root_taxid = st.sidebar.number_input("Root Taxon ID (e.g., 2759 for Eukaryotes)", value=2759)
     
@@ -271,4 +271,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
