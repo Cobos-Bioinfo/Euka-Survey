@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 
 # Databases
-*.db
 *.sqlite
 *.sqlite3
 
