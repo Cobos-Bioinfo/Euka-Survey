@@ -252,7 +252,7 @@ def main():
             st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
             st.stop()
             
-        with st.spinner(f"Aggregating data for {len(query_taxids)} clades..."):
+        with st.spinner(f"Aggregating data for {top_n} clades..."):
             
             # B) Fetch data for all found taxids
             phylum_metadata = build_phylum_metadata(conn, query_taxids, exclude_empty)
