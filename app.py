@@ -93,46 +93,64 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
         display.stop()
 
 
-@st.cache_data(show_spinner=False)
-def _compute_single_clade(_conn, taxid, exclude_empty):
+def build_phylum_metadata(conn, taxids, exclude_empty=False):
     """
-    Cached helper to quickly fetch pre-computed clade aggregations from SQLite.
+    In-memory replacement for phylo_divbarchart.load_data().
+    Uses bulk queries to fetch all required metadata at database speeds.
     """
-    cursor = _conn.cursor()
-    cursor.execute("SELECT n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng FROM precomputed_clade_features WHERE taxid = ?", (int(taxid),))
-    row = cursor.fetchone()
+    phylum_metadata = {}
     
-    if not row:
-        # If taxid has no entries in precomputed_clade_features (meaning it's fully empty)
-        if exclude_empty:
-            return None
-        return {
-            'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
-            's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
-            'p_ass': 0.0, 'p_ann': 0.0, 'p_rna': 0.0, 'p_lng': 0.0
-        }
+    if not taxids:
+        return phylum_metadata
         
-    n = row[0]
-        
-    c_ass, c_ann, c_rna, c_lng = row[1], row[2], row[3], row[4]
-    s_ass, s_ann, s_rna, s_lng = row[5], row[6], row[7], row[8]
+    cursor = conn.cursor()
+    chunk_size = 900 # Safe under SQLite 999 variable limits
     
-    if exclude_empty and c_ass == 0 and c_ann == 0 and c_rna == 0 and c_lng == 0:
-        return None
+    for i in range(0, len(taxids), chunk_size):
+        chunk = taxids[i:i + chunk_size]
+        placeholders = ','.join(['?'] * len(chunk))
         
-    # Calculate percentages exactly like before
-    p_ass = c_ass / n * 100 if n else 0
-    p_ann = c_ann / n * 100 if n else 0
-    p_rna = c_rna / n * 100 if n else 0
-    p_lng = c_lng / n * 100 if n else 0
-    
-    return {
-        'n_rows': n,
-        'c_ass': c_ass, 'c_ann': c_ann, 'c_rna': c_rna, 'c_lng': c_lng,
-        's_ass': s_ass, 's_ann': s_ann, 's_rna': s_rna, 's_lng': s_lng,
-        'p_ass': p_ass, 'p_ann': p_ann, 'p_rna': p_rna, 'p_lng': p_lng,
-    }
-
+        cursor.execute(f"""
+            SELECT taxid, n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng 
+            FROM precomputed_clade_features 
+            WHERE taxid IN ({placeholders})
+        """, chunk)
+        
+        results = {row[0]: row[1:] for row in cursor.fetchall()}
+        
+        for taxid in chunk:
+            row = results.get(int(taxid))
+            
+            if not row:
+                if exclude_empty:
+                    continue
+                phylum_metadata[taxid] = {
+                    'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
+                    's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
+                    'p_ass': 0.0, 'p_ann': 0.0, 'p_rna': 0.0, 'p_lng': 0.0
+                }
+                continue
+                
+            n = row[0]
+            c_ass, c_ann, c_rna, c_lng = row[1], row[2], row[3], row[4]
+            s_ass, s_ann, s_rna, s_lng = row[5], row[6], row[7], row[8]
+            
+            if exclude_empty and c_ass == 0 and c_ann == 0 and c_rna == 0 and c_lng == 0:
+                continue
+                
+            p_ass = c_ass / n * 100 if n else 0
+            p_ann = c_ann / n * 100 if n else 0
+            p_rna = c_rna / n * 100 if n else 0
+            p_lng = c_lng / n * 100 if n else 0
+            
+            phylum_metadata[taxid] = {
+                'n_rows': n,
+                'c_ass': c_ass, 'c_ann': c_ann, 'c_rna': c_rna, 'c_lng': c_lng,
+                's_ass': s_ass, 's_ann': s_ann, 's_rna': s_rna, 's_lng': s_lng,
+                'p_ass': p_ass, 'p_ann': p_ann, 'p_rna': p_rna, 'p_lng': p_lng,
+            }
+            
+    return phylum_metadata
 
 @st.cache_data(show_spinner=False)
 def _fetch_taxa_ete3_fallback(root_taxid, target_rank):
@@ -153,28 +171,6 @@ def fetch_taxa_cached(conn, root_taxid, target_rank):
         pass  # Table might not exist yet
         
     return _fetch_taxa_ete3_fallback(root_taxid, target_rank)
-
-
-def build_phylum_metadata(conn, taxids, exclude_empty=False, progress_bar=None, status_text=None):
-    """
-    In-memory replacement for phylo_divbarchart.load_data().
-    Instead of iterating TSV files, it uses the database directly.
-    """
-    phylum_metadata = {}
-    
-    total = len(taxids)
-    for i, taxid in enumerate(taxids):
-        if status_text:
-            status_text.text(f"Processing clade {i+1} of {total} (TaxID {taxid})...")
-        if progress_bar:
-            progress_bar.progress((i + 1) / total)
-
-        meta = _compute_single_clade(conn, taxid, exclude_empty)
-        if meta is not None:
-            phylum_metadata[taxid] = meta
-            
-    return phylum_metadata
-
 
 def main():
     st.title("EukaSurvey: The Genomic Resource Explorer for Eukaryotes")
@@ -257,19 +253,14 @@ def main():
             st.stop()
             
         with st.spinner(f"Aggregating data for {len(query_taxids)} clades..."):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
             
             # B) Fetch data for all found taxids
-            phylum_metadata = build_phylum_metadata(conn, query_taxids, exclude_empty, progress_bar, status_text)
+            phylum_metadata = build_phylum_metadata(conn, query_taxids, exclude_empty)
             
             # Sort and subset to Top N
             if phylum_metadata:
                 sorted_items = sorted(phylum_metadata.items(), key=lambda x: x[1][sort_by_key], reverse=True)
                 phylum_metadata = dict(sorted_items[:top_n])
-            
-            progress_bar.empty()
-            status_text.empty()
             
             # Show exclusion statistics
             nodes_excluded = len(query_taxids) - len(phylum_metadata)
