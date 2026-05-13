@@ -37,3 +37,4 @@ logs/
 temp_tree_render.svg
 .streamlit/secrets.toml
 *.db
+.agents/

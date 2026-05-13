@@ -316,7 +316,7 @@ def main():
             with cols[2]:
                 st.subheader("Annotrieve", text_alignment="center")
                 anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={taxid}"
-                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Gene Annotations for {root_name}</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
