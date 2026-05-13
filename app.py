@@ -13,19 +13,19 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryotes.db"
+DB_PATH = "eukaryote_taxid_features_2026_05_11.db" # For local development
 # Fetch from the automatic GitHub Release action
 DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
 
 # --- Streamlit Community Cloud App Name ---
-st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="wide", initial_sidebar_state="expanded")
 
 @st.cache_resource(show_spinner="Downloading Database (this happens once)...")
 def ensure_database():
     """Ensure the SQLite DB exists, downloading it if necessary."""
     if not os.path.exists(DB_PATH):
-        st.warning(f"Database not found. Downloading from {DB_DOWNLOAD_URL}...")
+        # st.warning(f"Database not found. Downloading from {DB_DOWNLOAD_URL}...")
         try:
             urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
             st.success("Database downloaded successfully!")
@@ -68,58 +68,89 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     os.makedirs(visualization.TMP_DIR)
 
     ncbi = NCBITaxa()
+    
+    # Filter valid taxids that exist in local ETE3 database
+    valid_taxids = []
+    for tid in phylum_metadata.keys():
+        try:
+            ncbi.get_lineage(tid)
+            valid_taxids.append(tid)
+        except ValueError:
+            pass
+            
+    if not valid_taxids:
+        if display:
+            display.stop()
+        return
+
     layout_fn = visualization.create_layout_fn(ncbi, phylum_metadata, include_counts)
     ts = visualization.configure_tree_style(layout_fn, include_counts)
     
-    tree = ncbi.get_topology(list(phylum_metadata.keys()))
+    tree = ncbi.get_topology(valid_taxids)
     tree.render(out_svg, w=1200, units="px", tree_style=ts)
 
     if display:
         display.stop()
 
 
-@st.cache_data(show_spinner=False)
-def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
+def build_phylum_metadata(conn, taxids, exclude_empty=False):
     """
-    Cached helper to quickly fetch pre-computed clade aggregations from SQLite.
+    In-memory replacement for phylo_divbarchart.load_data().
+    Uses bulk queries to fetch all required metadata at database speeds.
     """
-    cursor = _conn.cursor()
-    cursor.execute("SELECT n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng FROM precomputed_clade_features WHERE taxid = ?", (int(taxid),))
-    row = cursor.fetchone()
+    phylum_metadata = {}
     
-    if not row:
-        # If taxid has no entries in precomputed_clade_features (meaning it's fully empty)
-        if exclude_empty or min_organisms > 0:
-            return None
-        return {
-            'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
-            's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
-            'p_ass': 0.0, 'p_ann': 0.0, 'p_rna': 0.0, 'p_lng': 0.0
-        }
+    if not taxids:
+        return phylum_metadata
         
-    n = row[0]
-    if n < min_organisms:
-        return None
-        
-    c_ass, c_ann, c_rna, c_lng = row[1], row[2], row[3], row[4]
-    s_ass, s_ann, s_rna, s_lng = row[5], row[6], row[7], row[8]
+    cursor = conn.cursor()
+    chunk_size = 900 # Safe under SQLite 999 variable limits
     
-    if exclude_empty and c_ass == 0 and c_ann == 0 and c_rna == 0 and c_lng == 0:
-        return None
+    for i in range(0, len(taxids), chunk_size):
+        chunk = taxids[i:i + chunk_size]
+        placeholders = ','.join(['?'] * len(chunk))
         
-    # Calculate percentages exactly like before
-    p_ass = c_ass / n * 100 if n else 0
-    p_ann = c_ann / n * 100 if n else 0
-    p_rna = c_rna / n * 100 if n else 0
-    p_lng = c_lng / n * 100 if n else 0
-    
-    return {
-        'n_rows': n,
-        'c_ass': c_ass, 'c_ann': c_ann, 'c_rna': c_rna, 'c_lng': c_lng,
-        's_ass': s_ass, 's_ann': s_ann, 's_rna': s_rna, 's_lng': s_lng,
-        'p_ass': p_ass, 'p_ann': p_ann, 'p_rna': p_rna, 'p_lng': p_lng,
-    }
-
+        cursor.execute(f"""
+            SELECT taxid, n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng 
+            FROM precomputed_clade_features 
+            WHERE taxid IN ({placeholders})
+        """, chunk)
+        
+        results = {row[0]: row[1:] for row in cursor.fetchall()}
+        
+        for taxid in chunk:
+            row = results.get(int(taxid))
+            
+            if not row:
+                if exclude_empty:
+                    continue
+                phylum_metadata[taxid] = {
+                    'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
+                    's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
+                    'p_ass': 0.0, 'p_ann': 0.0, 'p_rna': 0.0, 'p_lng': 0.0
+                }
+                continue
+                
+            n = row[0]
+            c_ass, c_ann, c_rna, c_lng = row[1], row[2], row[3], row[4]
+            s_ass, s_ann, s_rna, s_lng = row[5], row[6], row[7], row[8]
+            
+            if exclude_empty and c_ass == 0 and c_ann == 0 and c_rna == 0 and c_lng == 0:
+                continue
+                
+            p_ass = c_ass / n * 100 if n else 0
+            p_ann = c_ann / n * 100 if n else 0
+            p_rna = c_rna / n * 100 if n else 0
+            p_lng = c_lng / n * 100 if n else 0
+            
+            phylum_metadata[taxid] = {
+                'n_rows': n,
+                'c_ass': c_ass, 'c_ann': c_ann, 'c_rna': c_rna, 'c_lng': c_lng,
+                's_ass': s_ass, 's_ann': s_ann, 's_rna': s_rna, 's_lng': s_lng,
+                'p_ass': p_ass, 'p_ann': p_ann, 'p_rna': p_rna, 'p_lng': p_lng,
+            }
+            
+    return phylum_metadata
 
 @st.cache_data(show_spinner=False)
 def _fetch_taxa_ete3_fallback(root_taxid, target_rank):
@@ -140,28 +171,6 @@ def fetch_taxa_cached(conn, root_taxid, target_rank):
         pass  # Table might not exist yet
         
     return _fetch_taxa_ete3_fallback(root_taxid, target_rank)
-
-
-def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, progress_bar=None, status_text=None):
-    """
-    In-memory replacement for phylo_divbarchart.load_data().
-    Instead of iterating TSV files, it uses the database directly.
-    """
-    phylum_metadata = {}
-    
-    total = len(taxids)
-    for i, taxid in enumerate(taxids):
-        if status_text:
-            status_text.text(f"Processing clade {i+1} of {total} (TaxID {taxid})...")
-        if progress_bar:
-            progress_bar.progress((i + 1) / total)
-
-        meta = _compute_single_clade(conn, taxid, min_organisms, exclude_empty)
-        if meta is not None:
-            phylum_metadata[taxid] = meta
-            
-    return phylum_metadata
-
 
 def main():
     st.title("EukaSurvey: The Genomic Resource Explorer for Eukaryotes")
@@ -202,16 +211,11 @@ def main():
         root_taxid = taxid_map[choice]
     
     # Target rank selection
-    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], placeholder=None)
-    
-    # Visualization settings
-    st.sidebar.subheader("Visualization Settings")
-    min_organisms = st.sidebar.number_input("Minimum Organisms in Clade", value=0, step=1)
-    exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
-    include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
+    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus", "species"], placeholder=None)
     
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
+    num_nodes = 0
     if root_taxid and target_rank:
         query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
         if query_taxa:
@@ -223,20 +227,63 @@ def main():
         else:
             st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
 
+    # Visualization settings
+    st.sidebar.subheader("Visualization Settings")
+    sort_options = {
+        "Number of organisms": "n_rows",
+        "Number of Assemblies": "c_ass",
+        "Annotations": "c_ann",
+        "RNA-Seq (Any)": "c_rna",
+        "Long-Read RNA": "c_lng"
+    }
+    sort_by_label = st.sidebar.selectbox("Sort by", list(sort_options.keys()))
+    sort_by_key = sort_options[sort_by_label]
+    
+    if num_nodes > 2:
+        breakpoints = [10, 50, 100, 250, 500, 1000]
+        valid_options = [str(b) for b in breakpoints if b < num_nodes]
+        valid_options.append(f"All ({num_nodes})")
+        valid_options.append("Custom")
+        
+        default_idx = valid_options.index("50") if "50" in valid_options else (len(valid_options) - 2)
+        selected_limit = st.sidebar.selectbox("Max nodes to display", valid_options, index=default_idx)
+        
+        if selected_limit == "Custom":
+            top_n = st.sidebar.number_input("Enter custom max nodes", min_value=2, max_value=num_nodes, value=min(50, num_nodes), step=1)
+        elif selected_limit.startswith("All"):
+            top_n = num_nodes
+        else:
+            top_n = int(selected_limit)
+    else:
+        top_n = max(2, num_nodes)
+    
+    exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
+    include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
+
     if st.sidebar.button("Generate Visualization", type="primary"):
         if not query_taxids:
             st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
             st.stop()
             
-        with st.spinner(f"Aggregating data for {len(query_taxids)} clades..."):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+        with st.spinner(f"Aggregating data for {top_n} clades..."):
             
             # B) Fetch data for all found taxids
-            phylum_metadata = build_phylum_metadata(conn, query_taxids, min_organisms, exclude_empty, progress_bar, status_text)
+            phylum_metadata = build_phylum_metadata(conn, query_taxids, exclude_empty)
             
-            progress_bar.empty()
-            status_text.empty()
+            # Sort and subset to Top N
+            if phylum_metadata:
+                if sort_by_key.startswith('c_'):
+                    s_key = sort_by_key.replace('c_', 's_')
+                    sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
+                else:
+                    sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
+                phylum_metadata = dict(sorted_items[:top_n])
+            
+            # Show exclusion statistics
+            nodes_excluded = len(query_taxids) - len(phylum_metadata)
+            if nodes_excluded > 0:
+                st.info(f"**Nodes included:** {len(phylum_metadata)}/{len(query_taxids)} "
+                        f"({nodes_excluded} excluded due to filtering criteria)")
             
             if not phylum_metadata:
                 st.warning("No clades have data matching the criteria (or all were empty).")
@@ -295,7 +342,7 @@ def main():
             with cols[2]:
                 st.subheader("Annotrieve", text_alignment="center")
                 anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={taxid}"
-                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Gene Annotations for {root_name}</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()

@@ -26,7 +26,7 @@ def precompute_common_clades(db_path: Path):
     conn.execute("CREATE INDEX idx_precomputed_taxa ON precomputed_taxa(root_taxid, target_rank)")
 
     common_taxids = [2759, 33208, 40674, 9443, 4751, 33090]
-    ranks = ["phylum", "class", "order", "family", "genus"]
+    ranks = ["phylum", "class", "order", "family", "genus", "species"]
     
     insert_rows = []
     for root in common_taxids:
