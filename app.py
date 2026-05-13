@@ -240,7 +240,20 @@ def main():
     sort_by_key = sort_options[sort_by_label]
     
     if num_nodes > 2:
-        top_n = st.sidebar.slider("Max nodes to display", min_value=2, max_value=num_nodes, value=min(50, num_nodes))
+        breakpoints = [10, 50, 100, 250, 500, 1000]
+        valid_options = [str(b) for b in breakpoints if b < num_nodes]
+        valid_options.append(f"All ({num_nodes})")
+        valid_options.append("Custom")
+        
+        default_idx = valid_options.index("50") if "50" in valid_options else (len(valid_options) - 2)
+        selected_limit = st.sidebar.selectbox("Max nodes to display", valid_options, index=default_idx)
+        
+        if selected_limit == "Custom":
+            top_n = st.sidebar.number_input("Enter custom max nodes", min_value=2, max_value=num_nodes, value=min(50, num_nodes), step=1)
+        elif selected_limit.startswith("All"):
+            top_n = num_nodes
+        else:
+            top_n = int(selected_limit)
     else:
         top_n = max(2, num_nodes)
     
