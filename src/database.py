@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 """
-query_clade.py — Summarize genomic data availability for taxonomic clades.
-
-Usage:
-    python query_clade.py 2759 --db eukaryotes.db
-    python query_clade.py 2759 2 4751 --db eukaryotes.db
-    python query_clade.py --file taxids.txt --db eukaryotes.db
-    python query_clade.py 2759 --file more_taxids.txt --db eukaryotes.db
-    python query_clade.py 2759 --db eukaryotes.db --tsv ./results/
+Functions for querying the SQLite database of precomputed features.
 """
 
 import argparse
