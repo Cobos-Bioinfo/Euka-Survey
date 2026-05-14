@@ -21,6 +21,7 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     except ImportError:
         display = None
 
+    # Importing visualization functions here to ensure they run in the child process
     import src.visualization as visualization
     from ete3 import NCBITaxa
     import os
