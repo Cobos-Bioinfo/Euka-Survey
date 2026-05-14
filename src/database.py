@@ -3,7 +3,6 @@
 Functions for querying the SQLite database of precomputed features.
 """
 
-import argparse
 import csv
 import sqlite3
 import sys

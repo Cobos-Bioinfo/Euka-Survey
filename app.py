@@ -113,9 +113,30 @@ def main():
         key="rank_selection"
     )
 
+    root_name = get_taxon_name(root_taxid)
+
+    # --- Root Taxon Stat Summary --- #
+    if root_taxid:
+        st.header(f"Genomic Resource Summary: {root_name}")
+        st.markdown(f"Overview of available resources across the entire clade (TaxID {root_taxid}).")
+        
+        # Fetch root stats dynamically
+        root_metadata = database.build_phylum_metadata(conn, [root_taxid], exclude_empty=False)
+        if root_metadata and root_taxid in root_metadata:
+            stats = root_metadata[root_taxid]
+            with st.container(horizontal=True):
+                st.metric("Total Species", f"{int(stats['n_rows']):,}", border=True)
+                st.metric("Assemblies", f"{int(stats['c_ass']):,}", border=True)
+                st.metric("Annotations", f"{int(stats['c_ann']):,}", border=True)
+                st.metric("RNA-Seq", f"{int(stats['c_rna']):,}", border=True)
+                st.metric("Long-RNA", f"{int(stats['c_lng']):,}", border=True)
+        else:
+            st.warning("No data found for this Root Taxon.")
+            
+        st.divider()
+
     # --- Open Query-Specific Database Buttons --- #
     st.header("Explore Primary Databases")
-    root_name = get_taxon_name(root_taxid)
 
     with st.container(horizontal=True, gap="medium"):
         cols = st.columns(3, gap="medium", width="stretch", border=True)
