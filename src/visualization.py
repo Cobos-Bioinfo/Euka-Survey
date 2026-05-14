@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import re
-import argparse
 import shutil
 import pandas as pd
 import matplotlib.pyplot as plt
