@@ -1,12 +1,61 @@
 #!/usr/bin/env python3
 import os
 import re
-import argparse
 import shutil
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from ete3 import NCBITaxa, TreeStyle, TextFace, ImgFace, NodeStyle
+
+def render_tree_in_process(phylum_metadata, include_counts, out_svg):
+    """
+    ETE3 requires PyQt5 to render trees. PyQt5 STRICTLY requires its QApplication
+    to be created in the main thread of a process. Since Streamlit runs user code
+    in worker threads, we must launch a separate process to render the tree.
+    """
+    # Initialize virtual display for headless environments (Streamlit Cloud)
+    try:
+        from pyvirtualdisplay import Display
+        display = Display(visible=False, size=(1200, 1000))
+        display.start()
+    except ImportError:
+        display = None
+
+    # Importing visualization functions here to ensure they run in the child process
+    import src.visualization as visualization
+    from ete3 import NCBITaxa
+    import os
+    import shutil
+
+    # Refresh phylo temp directory exclusively for this process
+    if os.path.exists(visualization.TMP_DIR):
+        shutil.rmtree(visualization.TMP_DIR)
+    os.makedirs(visualization.TMP_DIR)
+
+    ncbi = NCBITaxa()
+    
+    # Filter valid taxids that exist in local ETE3 database
+    valid_taxids = []
+    for tid in phylum_metadata.keys():
+        try:
+            ncbi.get_lineage(tid)
+            valid_taxids.append(tid)
+        except ValueError:
+            pass
+            
+    if not valid_taxids:
+        if display:
+            display.stop()
+        return
+
+    layout_fn = visualization.create_layout_fn(ncbi, phylum_metadata, include_counts)
+    ts = visualization.configure_tree_style(layout_fn, include_counts)
+    
+    tree = ncbi.get_topology(valid_taxids)
+    tree.render(out_svg, w=1200, units="px", tree_style=ts)
+
+    if display:
+        display.stop()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 DATA_COLS = ['short_read_count', 'long_read_count', 'assembly_count', 'annotation_count']
