@@ -9,6 +9,7 @@ from src import taxonomy
 from src import visualization
 from src import database
 from src import utils
+from src import ete_utils
 
 # Constants
 DB_PATH = "eukaryotes.db" # For local development
@@ -86,14 +87,14 @@ def main():
     )
 
     # Handle the Root Taxon ID selection
-    if choice is None:
-        root_taxid = None
-    elif choice == "Enter your own":
-        root_taxid = st.sidebar.text_input("", label_visibility="collapsed", value="2759", placeholder="e.g. 2759 for Eukaryota")
-        if root_taxid.isdigit():
-            root_taxid = int(root_taxid)
+    if choice == "Enter your own":
+        root_taxid_input = st.sidebar.text_input("", label_visibility="collapsed", value="2759", placeholder="e.g. 2759 for Eukaryota")
+        if root_taxid_input and str(root_taxid_input).strip().isdigit():
+            root_taxid = int(str(root_taxid_input).strip())
         else:
-            st.sidebar.warning("Please enter a valid numeric Taxon ID.")
+            if root_taxid_input:
+                st.sidebar.warning("Please enter a valid numeric Taxon ID.")
+            root_taxid = None
     else:
         taxid_map = {
             "Eukaryota (2759)": 2759, 
@@ -105,20 +106,62 @@ def main():
         }
         root_taxid = taxid_map[choice]
 
-    # Target rank Breakdown selection
-    target_rank = st.sidebar.selectbox(
-        "Breakdown by Rank", 
-        ["phylum", "class", "order", "family", "genus", "species"], 
-        placeholder=None,
-        key="rank_selection"
-    )
+    # Dynamic target rank Breakdown selection based on selected root taxon
+    FULL_RANKS = ['domain', 'superkingdom', 'kingdom', 'superphylum', 'phylum', 'subphylum', 'superclass', 'class', 'subclass', 'superorder', 'order', 'suborder', 'superfamily', 'family', 'subfamily', 'genus', 'subgenus', 'species']
+    ALLOWED_RANKS = ["phylum", "class", "order", "family", "genus", "species"]
+    
+    valid_options = ALLOWED_RANKS
+    if root_taxid:
+        try:
+            # Instantiate a fresh NCBITaxa to avoid Streamlit/SQLite cross-thread connection errors
+            from ete3 import NCBITaxa
+            local_ncbi = NCBITaxa()
+            ranks = local_ncbi.get_rank([root_taxid])
+            root_rank = ranks.get(root_taxid, "no rank")
+            
+            if root_rank not in FULL_RANKS:
+                # Find effective rank via lineage if 'no rank' or non-canonical
+                lineage = local_ncbi.get_lineage(root_taxid)
+                lin_ranks = local_ncbi.get_rank(lineage)
+                for anc_taxid in reversed(lineage):
+                    r = lin_ranks.get(anc_taxid, "no rank")
+                    if r in FULL_RANKS:
+                        root_rank = r
+                        break
+                        
+            if root_rank in FULL_RANKS:
+                root_idx = FULL_RANKS.index(root_rank)
+                valid_options = [r for r in ALLOWED_RANKS if FULL_RANKS.index(r) > root_idx]
+        except Exception as e:
+            pass
 
-    root_name = get_taxon_name(root_taxid)
+    if "rank_selection" not in st.session_state:
+        st.session_state.rank_selection = valid_options[0] if valid_options else "phylum"
+
+    if valid_options:
+        # Edge case: If previous selected rank was higher/equal (now invalid)
+        # automatically change to highest level available rank.
+        if st.session_state.rank_selection not in valid_options:
+            st.session_state.rank_selection = valid_options[0]
+            
+        target_rank = st.sidebar.selectbox(
+            "Breakdown by Rank", 
+            valid_options, 
+            placeholder=None,
+            key="rank_selection"
+        )
+    else:
+        # Edge case: Selected root taxon is species or lower
+        st.sidebar.warning("Selected root taxon is at the species level or lower. No further breakdown available.")
+        target_rank = None
+
+    root_name = ete_utils.get_name_from_taxid(root_taxid) if root_taxid else "Error" # type: ignore
+    root_rank = ete_utils.get_rank_from_taxid(root_taxid) if root_taxid else "clade" # type: ignore
 
     # --- Root Taxon Stat Summary --- #
     if root_taxid:
         st.header(f"Genomic Resource Summary: {root_name}")
-        st.markdown(f"Overview of available resources across the entire {root_name} clade (TaxID {root_taxid}).")
+        st.markdown(f"Overview of available resources across the entire _{root_name}_ {root_rank} (TaxID {root_taxid}).")
         
         # Fetch root stats dynamically
         root_metadata = database.build_phylum_metadata(conn, [root_taxid], exclude_empty=False)
@@ -270,6 +313,9 @@ def main():
 
     # 3. Generate Visualization on button click
     if st.sidebar.button("Generate Visualization", type="primary"):
+        if not target_rank:
+            st.error("Cannot generate tree: Root taxon is at species level or lower, no further taxonomic breakdown is possible.")
+            st.stop()
         if not query_taxids:
             st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
             st.stop()
