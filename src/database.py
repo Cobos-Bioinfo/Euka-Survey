@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
 """
-query_clade.py — Summarize genomic data availability for taxonomic clades.
-
-Usage:
-    python query_clade.py 2759 --db eukaryotes.db
-    python query_clade.py 2759 2 4751 --db eukaryotes.db
-    python query_clade.py --file taxids.txt --db eukaryotes.db
-    python query_clade.py 2759 --file more_taxids.txt --db eukaryotes.db
-    python query_clade.py 2759 --db eukaryotes.db --tsv ./results/
+Functions for querying the SQLite database of precomputed features.
 """
 
-import argparse
 import csv
 import sqlite3
 import sys
@@ -18,6 +10,65 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.ete_utils import get_species_and_subspecies, get_name_from_taxid, get_rank_from_taxid
+
+def build_phylum_metadata(conn, taxids, exclude_empty=False):
+    """
+    In-memory replacement for phylo_divbarchart.load_data().
+    Uses bulk queries to fetch all required metadata at database speeds.
+    """
+    phylum_metadata = {}
+    
+    if not taxids:
+        return phylum_metadata
+        
+    cursor = conn.cursor()
+    chunk_size = 900 # Safe under SQLite 999 variable limits
+    
+    for i in range(0, len(taxids), chunk_size):
+        chunk = taxids[i:i + chunk_size]
+        placeholders = ','.join(['?'] * len(chunk))
+        
+        cursor.execute(f"""
+            SELECT taxid, n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng 
+            FROM precomputed_clade_features 
+            WHERE taxid IN ({placeholders})
+        """, chunk)
+        
+        results = {row[0]: row[1:] for row in cursor.fetchall()}
+        
+        for taxid in chunk:
+            row = results.get(int(taxid))
+            
+            if not row:
+                if exclude_empty:
+                    continue
+                phylum_metadata[taxid] = {
+                    'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
+                    's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
+                    'p_ass': 0.0, 'p_ann': 0.0, 'p_rna': 0.0, 'p_lng': 0.0
+                }
+                continue
+                
+            n = row[0]
+            c_ass, c_ann, c_rna, c_lng = row[1], row[2], row[3], row[4]
+            s_ass, s_ann, s_rna, s_lng = row[5], row[6], row[7], row[8]
+            
+            if exclude_empty and c_ass == 0 and c_ann == 0 and c_rna == 0 and c_lng == 0:
+                continue
+                
+            p_ass = c_ass / n * 100 if n else 0
+            p_ann = c_ann / n * 100 if n else 0
+            p_rna = c_rna / n * 100 if n else 0
+            p_lng = c_lng / n * 100 if n else 0
+            
+            phylum_metadata[taxid] = {
+                'n_rows': n,
+                'c_ass': c_ass, 'c_ann': c_ann, 'c_rna': c_rna, 'c_lng': c_lng,
+                's_ass': s_ass, 's_ann': s_ann, 's_rna': s_rna, 's_lng': s_lng,
+                'p_ass': p_ass, 'p_ann': p_ann, 'p_rna': p_rna, 'p_lng': p_lng,
+            }
+            
+    return phylum_metadata
 
 
 # ---------------------------------------------------------------------------
