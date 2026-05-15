@@ -38,13 +38,6 @@ def get_ncbi():
     # However, st.cache_resource for NCBITaxa is often the cause of sqlite3.ProgrammingError.
     return NCBITaxa()
 
-@st.cache_data(show_spinner=False)
-def get_taxon_name(taxid):
-    """Retrieve taxon name safely and cache the result."""
-    ncbi = NCBITaxa()
-    names = ncbi.get_taxid_translator([taxid])
-    return names.get(taxid, "Unknown Taxon")
-
 def fetch_taxa_cached(conn, root_taxid, target_rank):
     """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
     if root_taxid is None or target_rank is None:
@@ -132,8 +125,9 @@ def main():
             if root_rank in FULL_RANKS:
                 root_idx = FULL_RANKS.index(root_rank)
                 valid_options = [r for r in ALLOWED_RANKS if FULL_RANKS.index(r) > root_idx]
-        except Exception as e:
-            pass
+        except ValueError:
+            st.sidebar.error("The selected TaxID could not be found. Please enter a valid TaxID or select from the common clades.")
+            root_taxid = None
 
     if "rank_selection" not in st.session_state:
         st.session_state.rank_selection = valid_options[0] if valid_options else "phylum"
