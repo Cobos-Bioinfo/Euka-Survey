@@ -67,6 +67,21 @@ def main():
 
     # 2. Sidebar Configuration 
     st.sidebar.header("Query Configuration")
+    
+    with st.sidebar.expander("How to use EukaSurvey", expanded=False):
+        st.markdown("""
+        **1. Define your Query**  
+        Select a **Root Taxon ID** (e.g. Mammals) and a **Breakdown Rank** (e.g. Family) to slice the Eukaryotic Tree of Life.
+        
+        **2. Review Summary**  
+        The dashboard shows total counts for Assemblies, Annotations, and RNA-Seq across your query.
+        
+        **3. Filter & Sort**  
+        In the *Tree Visualization* section, use **Filter Nodes** to skip taxa missing specific resources. You can combine filters with **AND/OR** logic.
+        
+        **4. Generate & Export**  
+        Click **Generate Visualization** to view the tree. Use the **Data Export** buttons to download your query as a TSV or the tree as an SVG.
+        """)
 
     # Root taxon selection with common clades for convenience
     common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
