@@ -21,6 +21,33 @@ This project provides a fast Streamlit Web Application for exploring genomic seq
 - `src/`: Core logic for database querying, taxonomy routing, TSV generation, and ETE3 tree rendering.
 - `db_builder/`: The offline pipeline for aggregating data from NCBI, ENA, and Annotrieve.
 
+## Architecture Notes
+
+### Thread-safe Taxonomy Lookups
+
+ETE3's `NCBITaxa` uses SQLite internally. Python's `sqlite3` enforces a rule
+that a connection created in one thread cannot be used in another — this causes
+`sqlite3.ProgrammingError` in Streamlit, because `st.cache_resource` shares a
+single instance across all sessions and their threads.
+
+The fix is to scope the `NCBITaxa` instance to the user's session via
+`st.session_state`, which guarantees the SQLite connection is always used in the
+same thread it was created in, while still avoiding repeated re-initialization
+on every UI interaction (rerun).
+
+```python
+# Safe — one connection per session, same thread always
+def get_local_ncbi():
+    if "ncbi" not in st.session_state:
+        st.session_state.ncbi = NCBITaxa()
+    return st.session_state.ncbi
+
+# Unsafe — shared across sessions/threads → ProgrammingError
+@st.cache_resource
+def get_ncbi():
+    return NCBITaxa()
+```
+
 ## Using the Application
 1. **Set Root Taxon**: Choose a starting point in the eukaryotic tree (e.g., Mammalia - TaxID 40674).
 2. **Select Breakdown Rank**: Choose the taxonomic resolution (e.g., Order, Family, or Genus).
