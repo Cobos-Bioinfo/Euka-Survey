@@ -332,7 +332,7 @@ def main():
             
             st.subheader("Sorting & Limits")
             sort_options = {
-                "Organisms": "n_rows",
+                "Species": "n_rows",
                 "Assemblies": "c_ass",
                 "Annotations": "c_ann",
                 "RNA-Seq (Any)": "c_rna",
