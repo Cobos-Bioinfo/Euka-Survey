@@ -24,7 +24,7 @@ def get_db_ready():
     """Ensure the SQLite DB exists and is ready."""
     if utils.ensure_database(DB_PATH, DB_DOWNLOAD_URL):
         return True
-    return False
+    raise RuntimeError("Database download failed. Restart the app to retry.")
 
 @st.cache_resource
 def get_db_connection():
@@ -67,7 +67,10 @@ def main():
     st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
 
     # 1. Initialize dependencies
-    if not get_db_ready():
+    try:
+        get_db_ready()
+    except RuntimeError:
+        st.error("Could not download the database. Please refresh the page to try again.")
         st.stop()
             
     conn = get_db_connection()
