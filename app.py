@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import os
+import uuid
 import multiprocessing as mp
 from ete3 import NCBITaxa
 
@@ -427,11 +428,11 @@ def main():
                     st.stop()
 
             with st.spinner("Rendering phylogenetic tree..."):
-                # Build and render ETE3 tree map using a Subprocess to respect PyQt threading rules
-                tmp_svg = "temp_tree_render.svg"
-                if os.path.exists(tmp_svg):
-                    os.remove(tmp_svg)
-                    
+                if "session_id" not in st.session_state:
+                    st.session_state.session_id = uuid.uuid4().hex
+
+                tmp_svg = f"temp_tree_{st.session_state.session_id}.svg"
+                
                 ctx = mp.get_context('spawn')
                 p = ctx.Process(target=visualization.render_tree_in_process, args=(phylum_metadata, include_counts, tmp_svg))
                 p.start()
@@ -443,16 +444,19 @@ def main():
                 
                 st.image(tmp_svg, use_container_width=True)
                 
-                # Export button
                 with open(tmp_svg, "rb") as f:
-                    st.download_button(
-                        label="Download SVG Figure",
-                        data=f.read(),
-                        file_name=f"tree_{root_taxid}_{target_rank}.svg",
-                        mime="image/svg+xml",
-                        icon=":material/download:",
-                        type="primary"
-                    )
+                    svg_bytes = f.read()
+                
+                os.remove(tmp_svg)
+                
+                st.download_button(
+                    label="Download SVG Figure",
+                    data=svg_bytes,
+                    file_name=f"tree_{root_taxid}_{target_rank}.svg",
+                    mime="image/svg+xml",
+                    icon=":material/download:",
+                    type="primary"
+                )
                 
                 # Store success in session state to persist buttons
                 st.session_state.rendered_taxid = root_taxid
