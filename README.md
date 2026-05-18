@@ -45,14 +45,14 @@ This project provides a fast Streamlit Web Application for exploring genomic seq
    ```bash
    streamlit run app.py
    ```
-   *Note: If the `eukaryotes.db` file isn't found locally, the app will automatically attempt to download the precomputed copy from Github Releases into the root folder.*
+   *Note: If the `eukaryotes.db` file isn't found locally, the app will automatically attempt to download the precomputed copy from GitHub Releases into the root folder.*
 
 ## Cloud Deployment (Streamlit Community Cloud)
 
 This project is formatted for 1-click deployment on Streamlit Community Cloud.
 Because of the heavy dependency on `ete3` and `PyQt5` for rendering SVG phylogenetic charts, Streamlit Cloud detects the `environment.yml` and natively provisions the correct conda backing.
 
-Similarly, the app will automatically download the SQLite database from the Github Releases into the root folder to boot.
+Similarly, the app will automatically download the SQLite database from the GitHub Releases into the root folder to boot.
 
 ## Offline DB Generation Pipeline
 If you ever want to update the raw organism features by fetching fresh NCBI/ENA/Annotrieve data:
