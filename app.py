@@ -263,6 +263,7 @@ def main():
 
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
+    query_taxa = None
     num_nodes = 0
     if root_taxid and target_rank and root_name != "Unknown":
         try:
@@ -277,6 +278,26 @@ def main():
                 st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
         except ValueError:
             st.sidebar.error("Invalid TaxID: Not found in database.")
+
+    # --- TSV Data Export Section --- #
+    if root_taxid and target_rank and query_taxa and root_name != "Unknown":
+        st.header("Data Export")
+        st.write("Download the complete overview of the current query as a TSV file.")
+        
+        # In Streamlit, data for download_button is evaluated on render. 
+        # We cache the generator to maintain UI performance instead of a 2-button prepare flow.
+        tsv_filename = f"{root_name.replace(' ', '_')}_{target_rank}_data.tsv"
+        tsv_data = utils.generate_tsv(conn, query_taxa)
+        
+        st.download_button(
+            label="Download TSV",
+            data=tsv_data,
+            file_name=tsv_filename,
+            mime="text/tab-separated-values",
+            icon=":material/download:",
+            type="primary"
+        )
+        st.divider()
 
     st.sidebar.divider()
     st.sidebar.subheader("Visualization Settings")
