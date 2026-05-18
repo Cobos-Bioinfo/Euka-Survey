@@ -332,8 +332,8 @@ def main():
             
             st.subheader("Sorting & Limits")
             sort_options = {
-                "Number of organisms": "n_rows",
-                "Number of Assemblies": "c_ass",
+                "Organisms": "n_rows",
+                "Assemblies": "c_ass",
                 "Annotations": "c_ann",
                 "RNA-Seq (Any)": "c_rna",
                 "Long-Read RNA": "c_lng"
@@ -341,7 +341,7 @@ def main():
             cols = st.columns(2)
             
             with cols[0]:
-                sort_by_label = st.selectbox("Sort top nodes by", list(sort_options.keys()), key="sort_by_selection")
+                sort_by_label = st.selectbox("Sort top nodes by number of: ", list(sort_options.keys()), key="sort_by_selection")
                 sort_by_key = sort_options[sort_by_label]
                 
                 exclude_empty = st.toggle("Exclude Empty Taxa (Zero data across all fields)", value=True)
