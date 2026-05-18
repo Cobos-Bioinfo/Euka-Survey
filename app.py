@@ -334,23 +334,33 @@ def main():
                 exclude_empty = st.toggle("Exclude Empty Taxa (Zero data across all fields)", value=True)
 
             with cols[1]:
-                if num_nodes > 2:
-                    breakpoints = [10, 50, 100, 250, 500, 1000]
-                    valid_options_limit = [str(b) for b in breakpoints if b < num_nodes]
-                    valid_options_limit.append(f"All ({num_nodes})")
-                    valid_options_limit.append("Custom")
-                    
-                    default_idx = valid_options_limit.index("50") if "50" in valid_options_limit else (len(valid_options_limit) - 2)
-                    selected_limit = st.selectbox("Max nodes to display", valid_options_limit, index=default_idx, key="limit_selection")
-                    
-                    if selected_limit == "Custom":
-                        top_n = st.number_input("Enter custom max nodes", min_value=2, max_value=num_nodes, value=min(50, num_nodes), step=1)
-                    elif selected_limit.startswith("All"):
-                        top_n = num_nodes
-                    else:
-                        top_n = int(selected_limit)
+                # Dynamic node limit options based on availability and hard cap
+                HARD_CAP = 500
+                effective_max = min(num_nodes, HARD_CAP)
+                
+                # Filter down the breakpoints to only show those valid for the current tree size
+                standard_breakpoints = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500]
+                valid_options_limit = [str(b) for b in standard_breakpoints if b < effective_max]
+                
+                # Add dynamic "All" and "Custom"
+                valid_options_limit.append(f"All ({effective_max})")
+                valid_options_limit.append("Custom")
+                
+                # Determine smart default index
+                if "50" in valid_options_limit:
+                    default_idx = valid_options_limit.index("50")
                 else:
-                    top_n = max(2, num_nodes)
+                    # If 50 is too high, pick the last numeric option before "All" (which is the effective max) or All.
+                    default_idx = max(0, len(valid_options_limit) - 2)
+                
+                selected_limit = st.selectbox("Max nodes to display", valid_options_limit, index=default_idx, key="limit_selection", help=f"Hard cap set to {HARD_CAP} nodes for performance.")
+                
+                if selected_limit == "Custom":
+                    top_n = st.number_input("Enter custom max nodes", min_value=2, max_value=effective_max, value=min(50, effective_max), step=1)
+                elif selected_limit.startswith("All"):
+                    top_n = effective_max
+                else:
+                    top_n = int(selected_limit)
 
                 include_counts = st.toggle("Show Numeric Details in Tree", value=True)
 
