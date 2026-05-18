@@ -38,12 +38,6 @@ def get_ncbi():
     # However, st.cache_resource for NCBITaxa is often the cause of sqlite3.ProgrammingError.
     return NCBITaxa()
 
-def get_local_ncbi():
-    """Per-session NCBITaxa instance, safe from cross-thread SQLite issues."""
-    if "ncbi" not in st.session_state:
-        st.session_state.ncbi = NCBITaxa()
-    return st.session_state.ncbi
-
 def fetch_taxa_cached(conn, root_taxid, target_rank):
     """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
     if root_taxid is None or target_rank is None:
@@ -144,7 +138,8 @@ def main():
         if root_taxid:
             try:
                 # Instantiate a fresh NCBITaxa to avoid Streamlit/SQLite cross-thread connection errors
-                local_ncbi = get_local_ncbi()
+                from ete3 import NCBITaxa
+                local_ncbi = NCBITaxa()
                 ranks = local_ncbi.get_rank([root_taxid])
                 root_rank = ranks.get(root_taxid, "no rank")
                 
