@@ -61,6 +61,16 @@ SQLITE_MAX_VARIABLES: int = 999
 
 RENDER_SUBPROCESS_TIMEOUT_SECONDS: int = 120
 
+# TTL for the per-query `@st.cache_data` caches (taxa counts/lists, metadata,
+# rendered tree SVG, export TSV). Time-bounds cache memory so a long-lived,
+# always-awake app can't accumulate large cached objects until it OOMs — the
+# 12h Community-Cloud sleep used to flush caches, but the keepalive bot now
+# prevents that sleep, so nothing ever reset them. Also refreshes query results
+# within this window after a weekly DB hot-swap (they're keyed on query params,
+# not the DB version). 1 hour is well within the weekly rebuild cadence and
+# cheap to recompute.
+CACHE_TTL_SECONDS: int = 3600
+
 # eukaryotes.db schema version stamped via `PRAGMA user_version`.
 #
 # The pipeline writes CURRENT on every build. The app reads it on

@@ -28,6 +28,7 @@ import streamlit as st
 
 from src import database, taxonomy, utils, visualization
 from src.constants import (
+    CACHE_TTL_SECONDS,
     DB_DOWNLOAD_URL,
     DB_PATH,
     DB_REFRESH_TTL_SECONDS,
@@ -68,7 +69,7 @@ def get_db_connection(db_tag: str | None) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False)
 
 
-@st.cache_data(max_entries=200, show_spinner=False)
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=200, show_spinner=False)
 def get_taxa_count_cached(_conn: sqlite3.Connection, root_taxid: int, target_rank: str) -> int:
     """Fast SQL count of `precomputed_taxa` rows for the chosen
     (root, rank) pair — feeds the "Tree size: N nodes" indicator
@@ -87,7 +88,7 @@ def get_taxa_count_cached(_conn: sqlite3.Connection, root_taxid: int, target_ran
         return 0
 
 
-@st.cache_data(max_entries=200, show_spinner=False)
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=64, show_spinner=False)
 def fetch_taxa_cached(_conn: sqlite3.Connection, root_taxid: int, target_rank: str):
     """Resolve a (root, rank) pair to a list of `(taxid, name)` tuples.
 
@@ -111,7 +112,7 @@ def fetch_taxa_cached(_conn: sqlite3.Connection, root_taxid: int, target_rank: s
     return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
 
 
-@st.cache_data(max_entries=100, show_spinner=False)
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=64, show_spinner=False)
 def get_phylum_metadata_cached(
     _conn: sqlite3.Connection, taxids: tuple, exclude_empty: bool,
 ) -> dict[int, CladeMetadata]:
@@ -119,7 +120,7 @@ def get_phylum_metadata_cached(
     return database.build_phylum_metadata(_conn, list(taxids), exclude_empty)
 
 
-@st.cache_data(max_entries=50, show_spinner=False)
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=50, show_spinner=False)
 def get_filtered_taxa_metadata_cached(
     _conn: sqlite3.Connection,
     root_taxid: int,
@@ -138,7 +139,7 @@ def get_filtered_taxa_metadata_cached(
     )
 
 
-@st.cache_data(max_entries=50, show_spinner=False)
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=16, show_spinner=False)
 def generate_tree_svg_cached(
     phylum_metadata: dict[int, CladeMetadata], include_counts: bool,
 ) -> bytes | None:

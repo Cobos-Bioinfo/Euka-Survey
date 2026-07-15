@@ -143,9 +143,16 @@ SVG bytes), so it's written to a temp `.svg` file and read back by path.
 - `get_taxa_count_cached`, `fetch_taxa_cached`, `get_phylum_metadata_cached`,
   `get_filtered_taxa_metadata_cached`, `generate_tree_svg_cached`: `@st.cache_data` wrappers around
   the `src/` functions, keyed on query params (taxids passed as tuples since they must be hashable).
-- `utils.generate_tsv` and `wikipedia.get_taxon_summary` carry their own `@st.cache_data` in their
-  own modules. `db_version.fetch_latest_release` is deliberately uncached (its caller already runs
-  behind `get_db_ready`'s ttl).
+  All carry `ttl=CACHE_TTL_SECONDS` (1h) plus a `max_entries` sized to the object weight — the
+  large-object ones are tightened (`fetch_taxa`/`phylum_metadata` 64, tree SVG 16). The `ttl` is the
+  OOM guard: with the keepalive bot preventing the 12h Community-Cloud sleep that used to flush
+  caches, an always-awake process would otherwise accumulate big cached objects until it OOMs. The
+  `ttl` also refreshes results within the hour after a weekly DB hot-swap (these caches key on query
+  params, not the DB version, so a swapped-in DB is invisible to them until the entry expires).
+- `utils.generate_tsv` (`ttl` + `max_entries=8` — a full-breakdown TSV can be tens of MB, and this
+  was previously unbounded) and `wikipedia.get_taxon_summary` (`ttl=24h`) carry their own
+  `@st.cache_data` in their own modules. `db_version.fetch_latest_release` is deliberately uncached
+  (its caller already runs behind `get_db_ready`'s ttl).
 
 ### Database refresh / weekly updates
 

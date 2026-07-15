@@ -11,6 +11,7 @@ import streamlit as st
 
 from src import database, db_version
 from src.constants import (
+    CACHE_TTL_SECONDS,
     DB_SCHEMA_VERSION_CURRENT,
     DB_SCHEMA_VERSION_LEGACY,
     DB_SCHEMA_VERSION_MIN_COMPATIBLE,
@@ -203,10 +204,15 @@ def ensure_latest_database(db_path: str, version_path: str, download_url: str) -
     _gate_schema(db_path)
     return result_tag
 
-@st.cache_data(show_spinner="Preparing data for download...")
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=8, show_spinner="Preparing data for download...")
 def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):
     """
     Generate a TSV string for the given query limit dynamically.
+
+    Bounded cache: a full-breakdown TSV (every taxon at the rank, never
+    limited) can be very large — for a big root at species rank, tens of MB
+    of string. `max_entries=8` + `ttl` keep a handful of recent exports from
+    piling up in a never-sleeping process (previously this was unbounded).
     """
     
     # We resolve the actual taxa inside the cached function to avoid hashing huge lists
