@@ -7,8 +7,8 @@ clades of eukaryotes have what kinds of genomic data publicly available:
 genome assemblies (NCBI), functional annotations (Annotrieve), and RNA-seq
 runs (ENA), split into short-read and long-read.
 
-The data is precomputed monthly into a SQLite database
-(`eukaryotes.db`, ~300 MB) that the app downloads on first launch.
+The data is precomputed weekly into a SQLite database
+(`eukaryotes.db`, ~400 MB) that the app downloads on first launch.
 
 **Try it now:** <https://euka-survey.streamlit.app/>
 

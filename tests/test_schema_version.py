@@ -1,6 +1,6 @@
 """Tests for the `PRAGMA user_version` schema-version gate.
 
-Pairs with `src/utils.py::ensure_database` (which calls
+Pairs with `src/utils.py::ensure_latest_database` (which calls
 `_check_schema_version`) and the pipeline's `_stamp_schema_version`
 step in `db_builder/pipeline_build_db.py`.
 """

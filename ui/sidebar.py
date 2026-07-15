@@ -1,6 +1,8 @@
-"""Sidebar: help + project links. No app state — pure content."""
+"""Sidebar: help + project links + database version. No app state."""
 
 import streamlit as st
+
+from src import db_version
 
 _GUIDE = """
 **What is this?**  
@@ -50,13 +52,13 @@ filtered or limited — as a TSV, with a preview of the first rows.
   annotations in **blue** (left), RNA-Seq & long-read in **green** (right).
 
 **About the data**
-Counts are precomputed monthly from NCBI, Annotrieve, and ENA. A species may
+Counts are precomputed weekly from NCBI, Annotrieve, and ENA. A species may
 have data for some resources but not others — that's exactly what this tool
 helps you spot.
 """
 
 
-def render_sidebar() -> None:
+def render_sidebar(db_tag: str | None = None) -> None:
     with st.sidebar:
         st.divider()
         st.header("Help & Resources")
@@ -71,3 +73,21 @@ def render_sidebar() -> None:
             "- [Annotrieve](https://genome.crg.es/annotrieve/) — annotations :material/open_in_new:\n"
             "- [ENA](https://www.ebi.ac.uk/ena/browser/) — RNA-Seq :material/open_in_new:"
         )
+
+        _render_db_version(db_tag)
+
+
+def _render_db_version(db_tag: str | None) -> None:
+    """Compact footer showing when the *served* database was built, derived
+    from its release tag (the one `get_db_ready` recorded). A user-provided DB
+    with no recorded version (`db_tag` is None) shows a neutral 'local build'
+    note instead of a date."""
+    st.divider()
+    date = db_version.date_from_tag(db_tag)
+    if date and db_tag:
+        st.caption(
+            f":material/database: **Database** · built {date}  \n"
+            f"[`{db_tag}`]({db_version.release_url(db_tag)}) :material/open_in_new:"
+        )
+    else:
+        st.caption(":material/database: **Database** · local build")

@@ -28,7 +28,7 @@ def fetch_ena_reads() -> tuple[dict[int, int], dict[int, int], int]:
     streaming connection is being severed mid-response. Until that's
     diagnosed we use `format=json` + `r.json()` (one POST, full payload
     materialized in memory). For the current ~8 M-row response this is
-    a few hundred MB of RAM, which is acceptable for an offline monthly
+    a few hundred MB of RAM, which is acceptable for an offline weekly
     pipeline.
     """
     payload = {

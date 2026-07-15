@@ -9,6 +9,16 @@ db_builder/build_db/* modules.
 # precomputed DB. Sibling to `eukaryotes.db` on disk; gitignored.
 DB_PATH: str = "eukaryotes.db"
 
+# Sidecar file recording the GitHub Release tag of the on-disk DB, so the
+# app can tell whether a newer weekly build exists without re-downloading.
+# Written by `src/utils.ensure_latest_database`; gitignored (`*.db.version`).
+DB_VERSION_PATH: str = DB_PATH + ".version"
+
+# How often a long-running app re-checks GitHub for a newer database release
+# (the `ttl` on `cache.get_db_ready`). The DB is rebuilt weekly, so hourly is
+# plenty responsive; the check is one cheap Releases-API call per interval.
+DB_REFRESH_TTL_SECONDS: int = 3600
+
 # Where the app fetches `eukaryotes.db` from on first run. Points at
 # the GitHub Release tagged `latest` — see Batch 10 in the changelog
 # for the date-tagged release scheme that keeps this pointer stable.
@@ -50,6 +60,16 @@ STANDARD_BREAKPOINTS: list[int] = [10, 25, 50, 75, 100, 150, 200]
 SQLITE_MAX_VARIABLES: int = 999
 
 RENDER_SUBPROCESS_TIMEOUT_SECONDS: int = 120
+
+# TTL for the per-query `@st.cache_data` caches (taxa counts/lists, metadata,
+# rendered tree SVG, export TSV). Time-bounds cache memory so a long-lived,
+# always-awake app can't accumulate large cached objects until it OOMs — the
+# 12h Community-Cloud sleep used to flush caches, but the keepalive bot now
+# prevents that sleep, so nothing ever reset them. Also refreshes query results
+# within this window after a weekly DB hot-swap (they're keyed on query params,
+# not the DB version). 1 hour is well within the weekly rebuild cadence and
+# cheap to recompute.
+CACHE_TTL_SECONDS: int = 3600
 
 # eukaryotes.db schema version stamped via `PRAGMA user_version`.
 #

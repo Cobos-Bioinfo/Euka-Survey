@@ -396,6 +396,24 @@ A pragmatic order that front-loads visible wins and unblocks later work:
 - 2026-06-16 — H9: Explore Results redesign — segmented rank control + dynamic
   explainer, 3-column compact form, toggles folded into the grid, "Custom" max
   option removed. Files: `ui/tree.py`. AppTest + pytest (113) green.
+- 2026-07-15 — Database version indicator: new `src/db_version.py` +
+  `ui/sidebar.py` compact footer showing the served DB's build date. (Reworked
+  same day by the weekly-refresh work below to read the *served* tag rather
+  than a live latest-release fetch.)
+- 2026-07-15 — Weekly DB self-update (no reboot): the app now picks up the
+  weekly rebuild while running. `cache.get_db_ready` gained an hourly `ttl` and
+  returns the on-disk release tag; `cache.get_db_connection(db_tag)` is keyed on
+  it so a swapped-in build opens a fresh connection. `utils.ensure_latest_database`
+  (replaces `ensure_database`) checks GitHub, downloads a strictly-newer release
+  to a temp file, validates schema before the atomic replace, and records the tag
+  in a gitignored sidecar (`eukaryotes.db.version`). Safety: a sidecar-less
+  user/local DB is adopted as-is and never auto-replaced (footer shows "local
+  build"); GitHub outages keep serving the current DB. Sidebar footer now shows
+  the served DB's date from its tag (`db_version.date_from_tag`). Also added a
+  `0 5 * * 0` cron to the `streamlit-keepalive` repo so a real visit ~1h after
+  the Sunday build triggers the pickup promptly. Verified via AppTest (local DB
+  untouched, footer "local build") + `tests/test_ensure_latest_database.py`
+  (7 cases incl. a real download/hot-swap integration test); 128 passed total.
 - 2026-06-16 — E5 (Export Data: explanation + truncated TSV preview), H10
   (comprehensive sidebar Help & Resources, open by default + source links), and
   a docs sweep (README, docs/ARCHITECTURE.md, CLAUDE.md brought up to date with

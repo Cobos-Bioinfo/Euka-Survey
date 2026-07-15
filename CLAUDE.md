@@ -23,12 +23,14 @@ For the offline DB-build pipeline use `uv sync --extra pipeline` (adds `tenacity
 use `uv sync --group dev` (adds `pytest`). The `ncbi-datasets-cli` is a standalone NCBI binary
 and is not a Python dep — see `docs/PIPELINE.md`.
 
-If `eukaryotes.db` is missing locally, `app.py` (via `src/utils.ensure_database`) downloads the
-precomputed copy from the latest GitHub Release on first run and validates its `PRAGMA
-user_version` against the app's compatibility range (see "Schema versioning" below).
+If `eukaryotes.db` is missing locally, `app.py` (via `src/utils.ensure_latest_database`) downloads
+the precomputed copy from the latest GitHub Release on first run and validates its `PRAGMA
+user_version` against the app's compatibility range (see "Schema versioning" below). The same
+function also re-checks GitHub roughly hourly (the `ttl` on `cache.get_db_ready`) and hot-swaps in a
+newer weekly build without a reboot — see "Database refresh / weekly updates" below.
 
 There is a pytest suite under `tests/` (run with `uv run pytest`). The only other CI is the
-monthly DB-build workflow (`.github/workflows/update_db.yml`).
+weekly DB-build workflow (`.github/workflows/update_db.yml`).
 
 ## Architecture
 
@@ -38,7 +40,7 @@ monthly DB-build workflow (`.github/workflows/update_db.yml`).
    `ui/` view sections (one `render_*` each, cross-section state via `ui/state.py`); `src/` holds
    the domain logic + `@st.cache_*` wrappers. Reads the prebuilt, read-only `eukaryotes.db`.
 2. **`db_builder/`** — an offline pipeline that fetches data from NCBI/Annotrieve/ENA and produces
-   `eukaryotes.db`. Run manually or via the monthly GitHub Action; not invoked by the web app.
+   `eukaryotes.db`. Run manually or via the weekly GitHub Action; not invoked by the web app.
 
 Both are first-class importable Python packages declared in `pyproject.toml`'s
 `tool.hatch.build.targets.wheel.packages`, so no `sys.path` hacks are needed.
@@ -101,7 +103,11 @@ Both are first-class importable Python packages declared in `pyproject.toml`'s
   — there is no shared `.tmp_bars/`. Lineage lookups are batched via `get_lineage_translator`.
 - `wikipedia.py` — `get_taxon_summary(name)`: cached (24h) Wikipedia REST-summary fetch for the
   root-taxon "About" card in `ui/summary.py`; follows redirects, fails silent → `None`.
-- `utils.py` — `ensure_database` (downloads `eukaryotes.db` if absent, validates schema version),
+- `db_version.py` — GitHub Release metadata. `fetch_latest_release()` (uncached; called behind
+  `get_db_ready`'s ttl) powers the weekly DB self-update; `date_from_tag()` / `release_url()` turn the
+  served DB's tag into the "Database built …" footer in `ui/sidebar.py`. Fails silent → `None`.
+- `utils.py` — `ensure_latest_database` (downloads `eukaryotes.db` if absent, hot-swaps a newer
+  weekly release, validates schema version),
   `generate_tsv` (exports query results as TSV), and the schema-version helpers
   (`_read_schema_version`, `_check_schema_version`, `IncompatibleDatabaseError`).
 - `constants.py` — schema-version constants and other module-level shared values.
@@ -127,13 +133,47 @@ SVG bytes), so it's written to a temp `.svg` file and read back by path.
 
 ### Streamlit caching layers (`src/cache.py`)
 
-- `get_db_ready` / `get_db_connection`: `@st.cache_resource`, one-time DB download + read-only
-  connection (`mode=ro`, `check_same_thread=False`).
+- `get_db_ready`: `@st.cache_resource(ttl=DB_REFRESH_TTL_SECONDS)`. Ensures the DB is present,
+  compatible, and up to date, returning its release tag. The `ttl` (hourly) is what lets a
+  long-running app pick up the weekly rebuild without a reboot.
+- `get_db_connection(db_tag)`: `@st.cache_resource(max_entries=2)`, read-only connection
+  (`mode=ro`, `check_same_thread=False`). Keyed on the tag from `get_db_ready`, so a swapped-in
+  release yields a fresh connection to the new file. `db_tag` must stay un-`_`-prefixed (else
+  Streamlit drops it from the cache key).
 - `get_taxa_count_cached`, `fetch_taxa_cached`, `get_phylum_metadata_cached`,
   `get_filtered_taxa_metadata_cached`, `generate_tree_svg_cached`: `@st.cache_data` wrappers around
   the `src/` functions, keyed on query params (taxids passed as tuples since they must be hashable).
-- `utils.generate_tsv` and `wikipedia.get_taxon_summary` carry their own `@st.cache_data` in their
-  own modules.
+  All carry `ttl=CACHE_TTL_SECONDS` (1h) plus a `max_entries` sized to the object weight — the
+  large-object ones are tightened (`fetch_taxa`/`phylum_metadata` 64, tree SVG 16). The `ttl` is the
+  OOM guard: with the keepalive bot preventing the 12h Community-Cloud sleep that used to flush
+  caches, an always-awake process would otherwise accumulate big cached objects until it OOMs. The
+  `ttl` also refreshes results within the hour after a weekly DB hot-swap (these caches key on query
+  params, not the DB version, so a swapped-in DB is invisible to them until the entry expires).
+- `utils.generate_tsv` (`ttl` + `max_entries=8` — a full-breakdown TSV can be tens of MB, and this
+  was previously unbounded) and `wikipedia.get_taxon_summary` (`ttl=24h`) carry their own
+  `@st.cache_data` in their own modules. `db_version.fetch_latest_release` is deliberately uncached
+  (its caller already runs behind `get_db_ready`'s ttl).
+
+### Database refresh / weekly updates
+
+The DB is rebuilt weekly (Sunday 03:20 UTC) and published as a new date-tagged GitHub Release. A
+Streamlit `cache_resource` value normally lives for the whole server process, and Community Cloud's
+filesystem is ephemeral, so an app that's kept awake (via the `streamlit-keepalive` bot) would never
+re-download and would serve stale data indefinitely. The fix is entirely in-app, no reboot required:
+
+- `get_db_ready` has a `ttl` (`DB_REFRESH_TTL_SECONDS`, hourly). On each expiry it re-runs
+  `utils.ensure_latest_database`, which asks GitHub for the latest release and, if it's newer than a
+  small sidecar version file (`eukaryotes.db.version`, gitignored), downloads it to a temp file,
+  validates the schema **before** the atomic `os.replace` (a bad release can't clobber a good DB),
+  and records the new tag.
+- `get_db_ready` returns the on-disk tag; `get_db_connection(db_tag)` is keyed on it, so a new tag is
+  a cache miss that opens a fresh read-only connection to the swapped file — no `.clear()` / reboot.
+- Safety rules in `ensure_latest_database`: a pre-existing DB with **no** sidecar (e.g. a local build
+  used for the thesis) is adopted as-is and never auto-replaced (its tag reports as `None` → sidebar
+  shows "local build"); a GitHub outage keeps the current DB serving; only a completely missing DB is
+  a hard failure. Covered by `tests/test_ensure_latest_database.py`.
+- The `streamlit-keepalive` repo (separate) has an extra `0 5 * * 0` cron so a real page visit ~1h
+  after the build triggers the freshness check promptly instead of waiting for the next 6-hourly ping.
 
 ### Query flow (root taxon -> rank -> tree/TSV)
 
@@ -183,7 +223,7 @@ snapshots are loaded instead of re-fetching; on successful completion they're de
 ≥ N before a run when upstream data is stale. Helpers + behavior covered by
 `tests/test_pipeline_snapshots.py`.
 
-The monthly GitHub Action (`.github/workflows/update_db.yml`) runs the whole pipeline under
+The weekly GitHub Action (`.github/workflows/update_db.yml`) runs the whole pipeline under
 `astral-sh/setup-uv@v6`, renames the dated output to `eukaryotes.db`, runs a size + row-count
 smoke test, and publishes it as a date-tagged GitHub Release
 (`db-YYYY.MM.DD.HHMM`, with `make_latest: true`). The app's `/releases/latest/download/eukaryotes.db`

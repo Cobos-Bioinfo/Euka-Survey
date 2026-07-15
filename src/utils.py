@@ -9,8 +9,9 @@ from contextlib import closing
 
 import streamlit as st
 
-from src import database
+from src import database, db_version
 from src.constants import (
+    CACHE_TTL_SECONDS,
     DB_SCHEMA_VERSION_CURRENT,
     DB_SCHEMA_VERSION_LEGACY,
     DB_SCHEMA_VERSION_MIN_COMPATIBLE,
@@ -19,6 +20,14 @@ from src.metrics import METRICS
 
 _DOWNLOAD_TIMEOUT_SECONDS = 300
 log = logging.getLogger("euka.utils")
+
+# Placeholder tag recorded when we download the DB but couldn't learn the
+# release tag (e.g. the download URL worked but the Releases API was briefly
+# down). It sorts lexicographically *before* any real `db-YYYY...` tag, so the
+# next successful check sees the real latest as strictly newer and self-heals.
+# Crucially it marks the DB as app-managed (a sidecar exists), so it is not
+# mistaken for a user-provided file and frozen.
+_UNKNOWN_TAG = "db-0000.00.00.0000"
 
 
 class IncompatibleDatabaseError(RuntimeError):
@@ -72,38 +81,138 @@ def _check_schema_version(db_path: str) -> None:
     log.info("eukaryotes.db schema version %d — OK.", found)
 
 
-def ensure_database(db_path, download_url):
-    """Ensure the SQLite DB exists and is at a compatible schema version.
+def _read_version(version_path: str) -> str | None:
+    """Return the release tag recorded for the on-disk DB, or None if the
+    sidecar is absent/empty (a user-provided or pre-existing DB)."""
+    try:
+        with open(version_path, "r", encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
-    Downloads atomically (`{db_path}.tmp` → `os.replace`) if missing, so
-    a network drop never leaves a half-written file. Then validates
-    `PRAGMA user_version` against the range the app supports.
+
+def _write_version(version_path: str, tag: str | None) -> None:
+    """Record which release the on-disk DB came from (best-effort)."""
+    if not tag:
+        return
+    try:
+        with open(version_path, "w", encoding="utf-8") as f:
+            f.write(tag)
+    except OSError as e:
+        log.info("Could not write DB version sidecar %s: %s", version_path, e)
+
+
+def _download_and_install(download_url: str, db_path: str) -> None:
+    """Download the DB to a temp file, validate its schema, then atomically
+    move it into place.
+
+    Validating the temp file *before* the `os.replace` means a broken or
+    schema-incompatible release can never clobber a working DB — the swap
+    only happens once the new file is known good. Raises on network failure
+    or an incompatible schema.
     """
-    if not os.path.exists(db_path):
-        tmp_path = f"{db_path}.tmp"
-        try:
-            with urllib.request.urlopen(download_url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, \
-                 open(tmp_path, "wb") as out:
-                shutil.copyfileobj(response, out)
-            os.replace(tmp_path, db_path)
-        except Exception as e:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            st.error(f"Could not download database: {e}")
-            return False
+    tmp_path = f"{db_path}.tmp"
+    try:
+        with urllib.request.urlopen(download_url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, \
+             open(tmp_path, "wb") as out:
+            shutil.copyfileobj(response, out)
+        _check_schema_version(tmp_path)  # raises IncompatibleDatabaseError
+        os.replace(tmp_path, db_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
+
+def _download_or_fail(download_url: str, db_path: str, spinner_msg: str) -> None:
+    """Download+install; on any failure surface st.error and raise
+    RuntimeError (the hard-failure path when there's no usable DB)."""
+    try:
+        with st.spinner(spinner_msg):
+            _download_and_install(download_url, db_path)
+    except IncompatibleDatabaseError as e:
+        st.error(str(e))
+        raise RuntimeError("incompatible database downloaded") from e
+    except Exception as e:
+        st.error(f"Could not download database: {e}")
+        raise RuntimeError("database download failed") from e
+
+
+def _try_refresh(download_url: str, db_path: str, latest_tag: str) -> bool:
+    """Attempt to swap in a newer release. Returns True on success; on any
+    failure logs and returns False so the current (still-valid) DB keeps
+    serving — `_download_and_install` never clobbers it on a bad download."""
+    try:
+        with st.spinner("Updating to the latest database..."):
+            _download_and_install(download_url, db_path)
+        return True
+    except Exception as e:
+        log.warning("DB refresh to %s failed; keeping current DB: %s", latest_tag, e)
+        return False
+
+
+def _gate_schema(db_path: str) -> None:
+    """Refuse an incompatible on-disk DB, surfacing the reason via st.error."""
     try:
         _check_schema_version(db_path)
     except IncompatibleDatabaseError as e:
         st.error(str(e))
-        return False
+        raise
 
-    return True
 
-@st.cache_data(show_spinner="Preparing data for download...")
+def ensure_latest_database(db_path: str, version_path: str, download_url: str) -> str | None:
+    """Ensure the freshest compatible database is on disk; return its release
+    tag (or None when the on-disk DB's version is unknown).
+
+    Behaviour:
+    - No DB present → download the latest release, record its tag.
+    - DB present with a recorded tag → download+swap only if a strictly newer
+      release exists; otherwise keep it.
+    - DB present WITHOUT a recorded tag (a user-provided / pre-existing file,
+      e.g. a local build) → adopt it as-is and never auto-replace it (and skip
+      the network entirely).
+    - GitHub unreachable → keep whatever DB is on disk; only a completely
+      missing DB is a hard failure.
+
+    Called on a timer via the `ttl` on `cache.get_db_ready`, so a long-running
+    app picks up the weekly rebuild without a reboot. Raises RuntimeError on a
+    hard failure (after st.error) — matching the old `ensure_database`
+    contract so the caller's `except RuntimeError` still applies.
+    """
+    local_tag = _read_version(version_path)
+    have_db = os.path.exists(db_path)
+
+    # Unmanaged/user-provided DB: adopt as-is, no network, never replace.
+    if have_db and local_tag is None:
+        _gate_schema(db_path)
+        return None
+
+    latest = db_version.fetch_latest_release()
+    latest_tag = latest["tag"] if latest else None
+
+    if not have_db:
+        _download_or_fail(download_url, db_path, "Downloading database (this happens once)...")
+        # Always record a sidecar so the DB is treated as app-managed on the
+        # next check, even if the tag was momentarily unknowable.
+        _write_version(version_path, latest_tag or _UNKNOWN_TAG)
+        result_tag = latest_tag
+    elif latest_tag and latest_tag > local_tag and _try_refresh(download_url, db_path, latest_tag):
+        _write_version(version_path, latest_tag)
+        result_tag = latest_tag
+    else:
+        result_tag = local_tag  # up to date, or refresh failed/unavailable
+
+    _gate_schema(db_path)
+    return result_tag
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=8, show_spinner="Preparing data for download...")
 def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):
     """
     Generate a TSV string for the given query limit dynamically.
+
+    Bounded cache: a full-breakdown TSV (every taxon at the rank, never
+    limited) can be very large — for a big root at species rank, tens of MB
+    of string. `max_entries=8` + `ttl` keep a handful of recent exports from
+    piling up in a never-sleeping process (previously this was unbounded).
     """
     
     # We resolve the actual taxa inside the cached function to avoid hashing huge lists

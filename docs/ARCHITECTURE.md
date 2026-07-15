@@ -6,7 +6,7 @@ EukaSurvey has two halves that don't talk to each other at runtime:
    `eukaryotes.db`. This is what users hit.
 2. **The offline pipeline** (`db_builder/`) — fetches data from NCBI,
    Annotrieve, and ENA, and produces `eukaryotes.db`. Run manually or
-   by the monthly GitHub Action. See [PIPELINE.md](PIPELINE.md).
+   by the weekly GitHub Action. See [PIPELINE.md](PIPELINE.md).
 
 This document covers the web-app half. For the pipeline, see
 [PIPELINE.md](PIPELINE.md).
