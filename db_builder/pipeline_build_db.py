@@ -236,7 +236,7 @@ def _stamp_schema_version(path: Path) -> None:
     """Set PRAGMA user_version on the produced DB.
 
     The app reads this on startup to refuse incompatible DBs (see
-    src/utils.py::ensure_database). Stamped after the final atomic
+    src/utils.py::ensure_latest_database). Stamped after the final atomic
     rename so an interrupted build never produces a versioned-looking
     .partial file.
     """

@@ -1,8 +1,13 @@
-name: Monthly Database Build
+name: Weekly Database Build
 
 on:
   schedule:
-    - cron: '0 0 1 * *' # 00:00 on the 1st of every month
+    # 03:20 UTC every Sunday — early morning in Europe (~04:20 CET / 05:20
+    # CEST), late night in the Americas, so the fewest users hit the ~1 min
+    # first-launch DB download after a fresh release. cron is fixed UTC and
+    # does NOT shift with DST. Minute offset from :00 dodges GitHub's
+    # top-of-the-hour scheduler congestion (see GitHub Actions schedule docs).
+    - cron: '20 3 * * 0'
   workflow_dispatch:    # Also runnable manually from the Actions tab
 
 jobs:
@@ -96,7 +101,7 @@ jobs:
           tag_name: "db-${{ env.BUILD_DATE }}"
           name: "Database build ${{ env.BUILD_DATE }}"
           body: |
-            Automated monthly database build on ${{ env.BUILD_DATE }} UTC.
+            Automated weekly database build on ${{ env.BUILD_DATE }} UTC.
 
             Sources: NCBI (assemblies), Annotrieve (annotations),
             ENA (RNA-Seq runs split by platform).

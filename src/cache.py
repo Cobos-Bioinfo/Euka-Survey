@@ -30,30 +30,40 @@ from src import database, taxonomy, utils, visualization
 from src.constants import (
     DB_DOWNLOAD_URL,
     DB_PATH,
+    DB_REFRESH_TTL_SECONDS,
+    DB_VERSION_PATH,
     RENDER_SUBPROCESS_TIMEOUT_SECONDS,
 )
 from src.metrics import CladeMetadata
 
 
-@st.cache_resource(show_spinner="Downloading Database (this happens once)...")
-def get_db_ready() -> bool:
-    """Ensure the SQLite DB exists and is at a compatible schema version.
+@st.cache_resource(ttl=DB_REFRESH_TTL_SECONDS, show_spinner=False)
+def get_db_ready() -> str | None:
+    """Ensure the DB is present, compatible, and up to date; return its
+    release tag (or None when the on-disk DB's version is unknown).
 
-    On first run downloads from `DB_DOWNLOAD_URL` to `DB_PATH`
-    atomically; on subsequent runs just validates `PRAGMA user_version`.
-    """
-    if utils.ensure_database(DB_PATH, DB_DOWNLOAD_URL):
-        return True
-    raise RuntimeError("Database download failed. Restart the app to retry.")
+    The `ttl` makes this re-evaluate roughly hourly, so a long-running app
+    notices the weekly rebuild and hot-swaps the DB **without a reboot**
+    (Streamlit `cache_resource` values otherwise live for the whole process,
+    which is why a kept-awake app never picked up new data). The returned tag
+    keys `get_db_connection`, so a new release automatically yields a fresh
+    connection to the swapped file. Download spinners live inside
+    `ensure_latest_database`, so an hourly no-op check shows nothing. Raises
+    RuntimeError on a hard failure (no usable DB)."""
+    return utils.ensure_latest_database(DB_PATH, DB_VERSION_PATH, DB_DOWNLOAD_URL)
 
 
-@st.cache_resource
-def get_db_connection() -> sqlite3.Connection:
+@st.cache_resource(max_entries=2)
+def get_db_connection(db_tag: str | None) -> sqlite3.Connection:
     """Open a read-only, thread-safe connection to the precomputed DB.
 
-    `check_same_thread=False` is required because Streamlit runs
-    callbacks on worker threads. The connection is read-only so this
-    is safe.
+    `db_tag` (the release tag from `get_db_ready`) is unused in the body but
+    is the cache key: a new tag is a cache miss, so a freshly swapped-in DB
+    gets a new connection while the old one is evicted (`max_entries=2` keeps
+    at most current + previous). It must NOT be prefixed with `_` or Streamlit
+    would drop it from the key. `check_same_thread=False` is required because
+    Streamlit runs callbacks on worker threads; the connection is read-only so
+    this is safe.
     """
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False)
 

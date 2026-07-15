@@ -28,17 +28,19 @@ def main() -> None:
     st.caption("Visualize genomic data availability across the Eukaryotic Tree of Life.")
 
     try:
-        get_db_ready()
+        db_tag = get_db_ready()
     except RuntimeError:
         st.error("Could not download the database. Please refresh the page to try again.")
         st.stop()
 
-    conn = get_db_connection()
+    # Keyed on the DB's release tag so a weekly hot-swap opens a fresh
+    # connection to the new file (see get_db_ready / get_db_connection).
+    conn = get_db_connection(db_tag)
 
     # Sidebar = persistent control panel: root taxon (the one global control)
     # first, help below. The breakdown rank now lives with the results.
     root = render_root_control(conn)
-    render_sidebar()
+    render_sidebar(db_tag)
 
     if not root.is_valid_root:
         if root.root_taxid is not None:

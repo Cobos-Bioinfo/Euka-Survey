@@ -9,6 +9,16 @@ db_builder/build_db/* modules.
 # precomputed DB. Sibling to `eukaryotes.db` on disk; gitignored.
 DB_PATH: str = "eukaryotes.db"
 
+# Sidecar file recording the GitHub Release tag of the on-disk DB, so the
+# app can tell whether a newer weekly build exists without re-downloading.
+# Written by `src/utils.ensure_latest_database`; gitignored (`*.db.version`).
+DB_VERSION_PATH: str = DB_PATH + ".version"
+
+# How often a long-running app re-checks GitHub for a newer database release
+# (the `ttl` on `cache.get_db_ready`). The DB is rebuilt weekly, so hourly is
+# plenty responsive; the check is one cheap Releases-API call per interval.
+DB_REFRESH_TTL_SECONDS: int = 3600
+
 # Where the app fetches `eukaryotes.db` from on first run. Points at
 # the GitHub Release tagged `latest` — see Batch 10 in the changelog
 # for the date-tagged release scheme that keeps this pointer stable.

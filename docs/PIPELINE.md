@@ -210,7 +210,7 @@ The web app's first-launch download targets that `latest` release.
 
 ## Known issues (tracked in the audit)
 
-- **No incremental processing across builds.** Every monthly build
+- **No incremental processing across builds.** Every weekly build
   re-fetches the whole dataset from NCBI / Annotrieve / ENA. *Within*
   a single build, failed steps now resume from cached snapshots (see
   [Resumability](#resumability-per-step-snapshots) above), but there is
