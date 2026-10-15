@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import tarfile
 import urllib.request
 from contextlib import closing
 
@@ -15,6 +16,7 @@ from src.constants import (
     DB_SCHEMA_VERSION_CURRENT,
     DB_SCHEMA_VERSION_LEGACY,
     DB_SCHEMA_VERSION_MIN_COMPATIBLE,
+    EUKARYOTE_TXID,
 )
 from src.metrics import METRICS
 
@@ -203,6 +205,85 @@ def ensure_latest_database(db_path: str, version_path: str, download_url: str) -
 
     _gate_schema(db_path)
     return result_tag
+
+
+# ETE3 keeps a pickled pre/post-order traversal beside taxa.sqlite;
+# `get_topology` and `get_descendant_taxa` both need it.
+_TRAVERSE_SUFFIX = ".traverse.pkl"
+
+
+def _check_taxonomy(sqlite_path: str) -> None:
+    """Refuse a taxonomy DB that isn't a usable ETE3 build (raises)."""
+    with closing(sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM species WHERE taxid = ?", (EUKARYOTE_TXID,),
+        ).fetchone()
+    if row is None:
+        raise ValueError(f"taxonomy DB has no taxid {EUKARYOTE_TXID}")
+
+
+def _download_and_install_taxonomy(download_url: str, dbfile: str) -> None:
+    """Stream the taxonomy tarball, extract its two files to temp paths
+    beside `dbfile`, validate the SQLite, then move both into place.
+
+    The `.traverse.pkl` is moved first and `taxa.sqlite` last, because
+    `NCBITaxa()` only checks for the .sqlite: an interrupted install is never
+    mistaken for a complete one. Raises on network failure, a missing member,
+    or an invalid DB.
+    """
+    base = os.path.basename(dbfile)
+    # Archive member name -> install path. The member names are the contract
+    # with the "Package NCBI taxonomy" step of update_db.yml.
+    targets = {base + _TRAVERSE_SUFFIX: dbfile + _TRAVERSE_SUFFIX, base: dbfile}
+    tmp_paths = {name: f"{dest}.tmp" for name, dest in targets.items()}
+    os.makedirs(os.path.dirname(dbfile) or ".", exist_ok=True)
+    extracted = set()
+    try:
+        with urllib.request.urlopen(download_url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, \
+             tarfile.open(fileobj=response, mode="r|gz") as tar:
+            for member in tar:
+                if member.isfile() and member.name in tmp_paths:
+                    with open(tmp_paths[member.name], "wb") as out:
+                        shutil.copyfileobj(tar.extractfile(member), out)
+                    extracted.add(member.name)
+        missing = sorted(set(targets) - extracted)
+        if missing:
+            raise ValueError(f"taxonomy archive is missing {missing}")
+        _check_taxonomy(tmp_paths[base])
+        for name, dest in targets.items():  # .traverse.pkl first, .sqlite last
+            os.replace(tmp_paths[name], dest)
+    finally:
+        for path in tmp_paths.values():
+            if os.path.exists(path):
+                os.remove(path)
+
+
+def ensure_taxonomy_database(dbfile: str, download_url: str) -> None:
+    """Make sure ETE3's NCBI taxonomy DB exists before anything calls
+    `NCBITaxa()`, by fetching the prebuilt copy published with each weekly
+    release.
+
+    Left to itself, `NCBITaxa()` builds the DB from NCBI's taxdump in-process,
+    loading all ~3M taxa as a Python tree. That peaks at ~3 GB RSS, over
+    Community Cloud's memory cap, so every cold start crashed the app (and a
+    tree render's spawned child could start a second build at the same time).
+
+    An existing DB is kept as-is (a local build, or one fetched earlier in
+    this container's life). A failed download only logs: `NCBITaxa()` then
+    falls back to building the DB itself, which works on a machine with
+    enough memory.
+    """
+    if os.path.exists(dbfile) and os.path.exists(dbfile + _TRAVERSE_SUFFIX):
+        return
+    try:
+        with st.spinner("Downloading the NCBI taxonomy (this happens once)..."):
+            _download_and_install_taxonomy(download_url, dbfile)
+        log.info("Installed prebuilt NCBI taxonomy at %s.", dbfile)
+    except Exception as e:
+        log.warning(
+            "Prebuilt taxonomy download failed; NCBITaxa will build it from taxdump: %s", e,
+        )
+
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=8, show_spinner="Preparing data for download...")
 def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):

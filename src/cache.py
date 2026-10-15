@@ -34,7 +34,9 @@ from src.constants import (
     DB_REFRESH_TTL_SECONDS,
     DB_VERSION_PATH,
     RENDER_SUBPROCESS_TIMEOUT_SECONDS,
+    TAXA_DOWNLOAD_URL,
 )
+from src.ete_utils import TAXA_DB_PATH
 from src.metrics import CladeMetadata
 
 
@@ -50,8 +52,13 @@ def get_db_ready() -> str | None:
     keys `get_db_connection`, so a new release automatically yields a fresh
     connection to the swapped file. Download spinners live inside
     `ensure_latest_database`, so an hourly no-op check shows nothing. Raises
-    RuntimeError on a hard failure (no usable DB)."""
-    return utils.ensure_latest_database(DB_PATH, DB_VERSION_PATH, DB_DOWNLOAD_URL)
+    RuntimeError on a hard failure (no usable DB).
+
+    Also pre-seeds ETE3's NCBI taxonomy DB, since this runs before anything
+    calls `NCBITaxa()` (see `utils.ensure_taxonomy_database`)."""
+    db_tag = utils.ensure_latest_database(DB_PATH, DB_VERSION_PATH, DB_DOWNLOAD_URL)
+    utils.ensure_taxonomy_database(TAXA_DB_PATH, TAXA_DOWNLOAD_URL)
+    return db_tag
 
 
 @st.cache_resource(max_entries=2)

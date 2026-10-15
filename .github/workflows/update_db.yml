@@ -84,6 +84,16 @@ jobs:
           print("Smoke test passed.")
           PY
 
+      - name: Package NCBI taxonomy
+        # The app downloads this instead of letting ETE3 build taxa.sqlite at
+        # runtime: that build peaks at ~3 GB RSS and OOMs the Streamlit Cloud
+        # container on every cold start. Step 1 of the pipeline already built
+        # it here, from the same taxdump this DB was built against. Member
+        # names are the contract with src/utils._download_and_install_taxonomy.
+        run: |
+          tar -C "$HOME/.etetoolkit" -czf taxa.tar.gz taxa.sqlite taxa.sqlite.traverse.pkl
+          ls -l taxa.tar.gz
+
       - name: Compute release tag
         run: |
           # Date + hour/minute so manual reruns on the same day don't collide.
@@ -105,5 +115,7 @@ jobs:
 
             Sources: NCBI (assemblies), Annotrieve (annotations),
             ENA (RNA-Seq runs split by platform).
-          files: eukaryotes.db
+          files: |
+            eukaryotes.db
+            taxa.tar.gz
           make_latest: true

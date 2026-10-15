@@ -199,12 +199,17 @@ Steps:
 6. Verify exactly one dated DB was produced
 7. **Smoke-test** the produced DB (size + per-table row counts; fails
    before publish if any check fails)
-8. Publish to GitHub Release with a date-based tag (`db-YYYY.MM.DD.HHMM`)
-   and `make_latest: true`. Past builds keep their dated tags for
-   rollback; the app's `/releases/latest/download/eukaryotes.db` URL
-   keeps resolving to the most recent build.
+8. Package the ETE3 taxonomy that step 1 built (`~/.etetoolkit/taxa.sqlite`
+   + `taxa.sqlite.traverse.pkl`) as `taxa.tar.gz`
+9. Publish both assets to a GitHub Release with a date-based tag
+   (`db-YYYY.MM.DD.HHMM`) and `make_latest: true`. Past builds keep their
+   dated tags for rollback; the app's `/releases/latest/download/` URLs
+   keep resolving to the most recent build.
 
-The web app's first-launch download targets that `latest` release.
+The web app's first-launch downloads target that `latest` release. The app
+fetches `taxa.tar.gz` because letting ETE3 build the taxonomy at runtime
+peaks at ~3 GB RSS, which OOMs the Streamlit Cloud container on every cold
+start.
 
 ---
 
