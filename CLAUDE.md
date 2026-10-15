@@ -25,7 +25,10 @@ and is not a Python dep — see `docs/PIPELINE.md`.
 
 If `eukaryotes.db` is missing locally, `app.py` (via `src/utils.ensure_latest_database`) downloads
 the precomputed copy from the latest GitHub Release on first run and validates its `PRAGMA
-user_version` against the app's compatibility range (see "Schema versioning" below). The same
+user_version` against the app's compatibility range (see "Schema versioning" below). It also
+pre-seeds ETE3's NCBI taxonomy (`~/.etetoolkit/taxa.sqlite`) from the release's `taxa.tar.gz` if
+absent (`src/utils.ensure_taxonomy_database`), because ETE3's own in-process build peaks at ~3 GB
+RSS and OOMs the Streamlit Cloud container on cold start. The same
 function also re-checks GitHub roughly hourly (the `ttl` on `cache.get_db_ready`) and hot-swaps in a
 newer weekly build without a reboot — see "Database refresh / weekly updates" below.
 
@@ -107,7 +110,8 @@ Both are first-class importable Python packages declared in `pyproject.toml`'s
   `get_db_ready`'s ttl) powers the weekly DB self-update; `date_from_tag()` / `release_url()` turn the
   served DB's tag into the "Database built …" footer in `ui/sidebar.py`. Fails silent → `None`.
 - `utils.py` — `ensure_latest_database` (downloads `eukaryotes.db` if absent, hot-swaps a newer
-  weekly release, validates schema version),
+  weekly release, validates schema version), `ensure_taxonomy_database` (installs the prebuilt
+  ETE3 taxonomy if absent; never replaces an existing one; a failed download only logs),
   `generate_tsv` (exports query results as TSV), and the schema-version helpers
   (`_read_schema_version`, `_check_schema_version`, `IncompatibleDatabaseError`).
 - `constants.py` — schema-version constants and other module-level shared values.
@@ -225,7 +229,8 @@ snapshots are loaded instead of re-fetching; on successful completion they're de
 
 The weekly GitHub Action (`.github/workflows/update_db.yml`) runs the whole pipeline under
 `astral-sh/setup-uv@v6`, renames the dated output to `eukaryotes.db`, runs a size + row-count
-smoke test, and publishes it as a date-tagged GitHub Release
+smoke test, packages the ETE3 taxonomy step 1 built as `taxa.tar.gz` (the app downloads it rather
+than building it), and publishes both as a date-tagged GitHub Release
 (`db-YYYY.MM.DD.HHMM`, with `make_latest: true`). The app's `/releases/latest/download/eukaryotes.db`
 URL keeps resolving to the most recent build; older releases stay around for rollback.
 

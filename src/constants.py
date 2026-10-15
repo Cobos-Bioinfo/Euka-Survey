@@ -26,6 +26,14 @@ DB_DOWNLOAD_URL: str = (
     "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"
 )
 
+# Prebuilt ETE3 NCBI taxonomy (`taxa.sqlite` + `taxa.sqlite.traverse.pkl`),
+# published beside eukaryotes.db by the weekly workflow. The app fetches it
+# instead of letting `NCBITaxa()` build it from taxdump at runtime, a build
+# that peaks at ~3 GB RSS and OOMs the Streamlit Cloud container.
+TAXA_DOWNLOAD_URL: str = (
+    "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/taxa.tar.gz"
+)
+
 EUKARYOTE_TXID: int = 2759
 
 COMMON_CLADES: dict[int, str] = {

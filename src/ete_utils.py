@@ -11,6 +11,11 @@ from contextlib import closing
 from functools import lru_cache
 
 from ete3 import NCBITaxa
+from ete3.ncbi_taxonomy.ncbiquery import DEFAULT_TAXADB
+
+# Where `NCBITaxa()` looks for its taxonomy DB (and builds it from taxdump if
+# absent). The app pre-seeds this path via `utils.ensure_taxonomy_database`.
+TAXA_DB_PATH: str = DEFAULT_TAXADB
 
 
 # Thread-local NCBITaxa cache.
